@@ -99,6 +99,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "requires_db: test needs a reachable PostgreSQL instance (CODESENTINEL_TEST_DATABASE_URL)",
+    "requires_docker: test needs a Docker daemon and the built analysis image",
 ]
 filterwarnings = ["error::DeprecationWarning"]
 

@@ -13,6 +13,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
+from typing import Any, NoReturn
 
 import pytest
 import pytest_asyncio
@@ -26,6 +27,23 @@ from app.main import create_app
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 TEST_DB_ENV_VAR = "CODESENTINEL_TEST_DATABASE_URL"
+
+#: When set, an unavailable integration dependency is a failure rather than a skip.
+#: CI sets it. Without this, a broken PostgreSQL service or a missing Docker daemon
+#: would turn every integration test into a skip and the build would still be green --
+#: acceptance evidence silently evaporating. Putting the guarantee here rather than in a
+#: log-grepping CI step keeps it next to the thing it guards.
+REQUIRE_INTEGRATION_ENV_VAR = "CODESENTINEL_REQUIRE_INTEGRATION"
+
+
+def _unavailable(reason: str) -> NoReturn:
+    """Skip because a dependency is missing -- or fail, if CI demanded it be present."""
+    if os.environ.get(REQUIRE_INTEGRATION_ENV_VAR) == "1":
+        pytest.fail(
+            f"{REQUIRE_INTEGRATION_ENV_VAR}=1 requires this test to run, but: {reason}",
+            pytrace=False,
+        )
+    pytest.skip(reason)
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +64,12 @@ def _reset_caches() -> Iterator[None]:
 def settings() -> Settings:
     """Default settings, read from the environment."""
     return get_settings()
+
+
+@pytest.fixture
+def settings_defaults() -> Settings:
+    """A fresh Settings instance, for asserting values against their own source."""
+    return Settings()
 
 
 @pytest.fixture
@@ -70,10 +94,9 @@ def _test_database_url() -> str:
     """Return the test database URL or skip the test, saying exactly why."""
     url = os.environ.get(TEST_DB_ENV_VAR)
     if not url:
-        pytest.skip(
+        _unavailable(
             f"{TEST_DB_ENV_VAR} is not set, so no PostgreSQL instance is available. "
-            "This test did not run; it was not verified.",
-            allow_module_level=False,
+            "This test did not run; it was not verified."
         )
     return url
 
@@ -99,7 +122,7 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
             await conn.rollback()
     except Exception as exc:  # noqa: BLE001 - the reason is reported in the skip message
         await engine.dispose()
-        pytest.skip(f"PostgreSQL at {TEST_DB_ENV_VAR} is unreachable: {exc}")
+        _unavailable(f"PostgreSQL at {TEST_DB_ENV_VAR} is unreachable: {exc}")
 
     await asyncio.to_thread(_run_migrations, url, "head")
     try:
@@ -151,3 +174,65 @@ async def db_session(db_connection: AsyncConnection) -> AsyncIterator[AsyncSessi
     """An ORM session bound to the rolled-back connection."""
     async with AsyncSession(bind=db_connection, expire_on_commit=False) as session:
         yield session
+
+
+# ---------------------------------------------------------------------------
+# Docker fixtures
+# ---------------------------------------------------------------------------
+
+DOCKER_SKIP_REASON = (
+    "no Docker daemon is reachable, so container isolation was NOT verified. "
+    "Constraint C1 cannot be demonstrated without one."
+)
+
+
+@pytest.fixture(scope="session")
+def docker_client() -> Iterator[Any]:
+    """A live Docker client, or skip saying plainly what went unverified.
+
+    The sandbox is a security boundary. A run of this suite that skips these tests has
+    not checked that boundary at all, so the skip reason says so in those words rather
+    than reading like an optional extra.
+    """
+    import docker
+    from docker.errors import DockerException
+
+    try:
+        client = docker.from_env()
+        client.ping()
+    except (DockerException, OSError) as exc:
+        _unavailable(f"{DOCKER_SKIP_REASON} ({exc})")
+
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+@pytest.fixture(scope="session")
+def analysis_image(docker_client: Any) -> str:
+    """The analysis image tag, verified present.
+
+    The sandbox has no network and cannot pull, so the image must already exist. Building
+    it is the CI workflow's job; here we only refuse to pretend it is there.
+    """
+    from docker.errors import ImageNotFound
+
+    image = Settings().sandbox_image
+    try:
+        docker_client.images.get(image)
+    except ImageNotFound:
+        _unavailable(
+            f"analysis image {image} is not built, so the sandbox was NOT verified. "
+            f"Build it with: docker build -f sandbox/Dockerfile.analysis -t {image} sandbox/"
+        )
+    return image
+
+
+@pytest.fixture
+def source_tree(tmp_path: Path) -> Path:
+    """A minimal directory standing in for a cloned target repository."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("")
+    (tmp_path / "pkg" / "module.py").write_text("def f(x):\n    return x + 1\n")
+    return tmp_path
