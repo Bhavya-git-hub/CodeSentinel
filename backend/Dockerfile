@@ -1,0 +1,38 @@
+# API and worker image.
+#
+# This image runs *our* code. Target repositories are never analysed here -- that happens
+# in the separate, network-less sandbox image (sandbox/Dockerfile.analysis), per C1.
+
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /srv/app
+
+# git is needed at runtime by GitPython for phase 3 cloning.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dependencies are installed from the lock file first, in their own layer, so a source
+# change does not invalidate the dependency cache.
+COPY requirements.lock ./
+RUN pip install --require-hashes=false -r requirements.lock
+
+COPY pyproject.toml ./
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./
+RUN pip install --no-deps -e .
+
+# Non-root: the API holds database credentials and, from phase 2, a handle on the Docker
+# daemon. Neither belongs to uid 0.
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /srv/app
+USER appuser
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

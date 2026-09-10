@@ -1,0 +1,81 @@
+# Local development stack.
+#
+# NOTE (phase 1): written but not yet verified at runtime -- Docker is not installed on
+# the development machine this was built on. `docker compose build` runs in CI, which
+# proves the Dockerfiles are valid, but `docker compose up` has not been executed.
+# See docs/adr/0005-deferred-docker-verification.md.
+
+name: codesentinel
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: codesentinel
+      POSTGRES_PASSWORD: codesentinel
+      POSTGRES_DB: codesentinel
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codesentinel -d codesentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    environment: &backend_env
+      CODESENTINEL_ENVIRONMENT: local
+      CODESENTINEL_DATABASE_URL: postgresql+asyncpg://codesentinel:codesentinel@postgres:5432/codesentinel
+      CODESENTINEL_REDIS_URL: redis://redis:6379/0
+      CODESENTINEL_CLONE_ROOT: /var/lib/codesentinel/clones
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Readiness, not liveness: this must report unhealthy while a dependency is down.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health/ready').status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    build:
+      context: ./backend
+    command: ["celery", "-A", "app.workers.celery_app:celery_app", "worker", "--loglevel=INFO", "--concurrency=1"]
+    environment: *backend_env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Cloned target repositories. Never mounted into the API, and from phase 2 mounted
+      # read-only into the sandbox container that analyses them.
+      - clones:/var/lib/codesentinel/clones
+    # TODO(phase 2): the worker needs to launch analysis containers, which requires access
+    # to a Docker daemon. Mounting the host socket here is a privilege escalation path and
+    # is deliberately NOT done yet -- the options are evaluated in phase 2.
+    # See docs/adr/0006-worker-docker-access.md.
+
+volumes:
+  pgdata:
+  clones:
