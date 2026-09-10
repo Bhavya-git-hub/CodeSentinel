@@ -35,6 +35,10 @@ class _StubClient:
 
 @pytest.fixture
 def sandbox(tmp_path: Path) -> Sandbox:
+    # pytest creates tmp_path as 0700, which the readability precheck rejects. A real
+    # clone has to be world-readable for the sandbox uid to see it, so the fixture is
+    # set up the same way.
+    tmp_path.chmod(0o755)
     return Sandbox(
         Settings(),
         source_dir=tmp_path,
