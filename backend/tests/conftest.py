@@ -18,6 +18,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.config import Settings, get_settings
 from app.db import reset_engine_cache
@@ -87,7 +88,11 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
     production is broken.
     """
     url = _test_database_url()
-    engine = create_async_engine(url, poolclass=None)
+    # NullPool is required, not an optimisation. This fixture is session-scoped while
+    # tests run on function-scoped event loops; a pooled asyncpg connection created in
+    # one loop and reused in another raises "attached to a different loop". NullPool
+    # opens a fresh connection per checkout, always in the loop that asks for it.
+    engine = create_async_engine(url, poolclass=NullPool)
 
     try:
         async with engine.connect() as conn:
@@ -103,12 +108,16 @@ async def db_engine() -> AsyncIterator[AsyncEngine]:
         await engine.dispose()
 
 
-def _run_migrations(url: str, revision: str) -> None:
+def _run_migrations(url: str, revision: str, *, downgrade: bool = False) -> None:
     """Run Alembic in a worker thread.
 
     ``alembic/env.py`` calls ``asyncio.run`` for online migrations, which raises if a loop
     is already running. Running it on a thread with no loop of its own is what makes it
     callable from an async fixture.
+
+    ``downgrade`` selects the direction explicitly. ``command.upgrade(cfg, "base")`` is
+    silently a no-op rather than a downgrade, which would make a downgrade test pass
+    without reversing anything.
     """
     from alembic import command
     from alembic.config import Config
@@ -116,7 +125,10 @@ def _run_migrations(url: str, revision: str) -> None:
     cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
     cfg.cmd_opts = type("Opts", (), {"x": [f"url={url}"]})()  # type: ignore[assignment]
-    command.upgrade(cfg, revision)
+    if downgrade:
+        command.downgrade(cfg, revision)
+    else:
+        command.upgrade(cfg, revision)
 
 
 @pytest_asyncio.fixture

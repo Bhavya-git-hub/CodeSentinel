@@ -97,7 +97,7 @@ async def test_downgrade_removes_every_table(db_engine: AsyncEngine) -> None:
     """
     url = os.environ[TEST_DB_ENV_VAR]
     await db_engine.dispose()
-    await asyncio.to_thread(_run_migrations, url, "base")
+    await asyncio.to_thread(_run_migrations, url, "base", downgrade=True)
     try:
         engine = create_async_engine(url)
         async with engine.connect() as conn:
