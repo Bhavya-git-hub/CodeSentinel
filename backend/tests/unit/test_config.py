@@ -8,7 +8,13 @@ from pydantic import ValidationError
 from app.config import Settings, get_settings
 
 
-def test_defaults_are_local() -> None:
+def test_defaults_are_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Defaults must be asserted with the environment cleared.
+
+    CI sets CODESENTINEL_ENVIRONMENT=ci, so reading the ambient value here would test
+    the runner's configuration rather than the declared default.
+    """
+    monkeypatch.delenv("CODESENTINEL_ENVIRONMENT", raising=False)
     settings = Settings()
     assert settings.environment == "local"
     assert settings.api_v1_prefix == "/api/v1"
