@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy app/
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    # Real PostgreSQL and Redis. The suite's requires_db tests are the acceptance
+    # evidence for the data model and migrations, so they must actually execute here --
+    # a green run full of skips is not acceptance.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: codesentinel
+          POSTGRES_PASSWORD: codesentinel
+          POSTGRES_DB: codesentinel_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U codesentinel -d codesentinel_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      CODESENTINEL_ENVIRONMENT: ci
+      CODESENTINEL_DATABASE_URL: postgresql+asyncpg://codesentinel:codesentinel@localhost:5432/codesentinel_test
+      CODESENTINEL_TEST_DATABASE_URL: postgresql+asyncpg://codesentinel:codesentinel@localhost:5432/codesentinel_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Run tests
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml -rs
+
+      - name: Fail if database tests were skipped
+        # Guards the acceptance criterion itself. Without this, a broken database service
+        # would turn every requires_db test into a skip and the job would still be green.
+        run: |
+          pytest -m requires_db -q --collect-only > /dev/null
+          if pytest -m requires_db -q -rs 2>&1 | grep -q "no PostgreSQL instance is available"; then
+            echo "::error::requires_db tests were skipped in CI; the data model was not verified."
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: backend/coverage.xml
+
+  build:
+    name: Build images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Substitutes for the local `docker compose up` acceptance criterion, which could
+      # not be run on the development machine (no Docker installed). This proves the
+      # Dockerfiles and compose file are valid; it does not prove the stack runs.
+      # See docs/adr/0005-deferred-docker-verification.md.
+      - name: Validate compose file
+        run: docker compose config --quiet
+
+      - name: Build images
+        run: docker compose build
