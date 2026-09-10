@@ -153,7 +153,11 @@ def test_the_source_mount_is_read_only(sandbox: Sandbox) -> None:
         timeout=60,
     )
     assert result.exit_code != 0
-    assert "read-only" in result.stderr.lower()
+    # Either refusal is correct: the kernel may report the read-only mount or, when the
+    # host owner differs from the sandbox uid, a plain permission denial. Asserting on
+    # one specific message would make the test depend on which one happens to win.
+    stderr = result.stderr.lower()
+    assert "read-only" in stderr or "permission denied" in stderr
 
 
 def test_the_source_is_actually_visible(sandbox: Sandbox) -> None:

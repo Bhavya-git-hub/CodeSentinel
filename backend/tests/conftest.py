@@ -231,8 +231,15 @@ def analysis_image(docker_client: Any) -> str:
 
 @pytest.fixture
 def source_tree(tmp_path: Path) -> Path:
-    """A minimal directory standing in for a cloned target repository."""
-    (tmp_path / "pkg").mkdir()
+    """A minimal directory standing in for a cloned target repository.
+
+    Made world-readable because pytest creates tmp_path as 0700 and the sandbox runs as
+    an unprivileged uid that cannot read that. Phase 3 ingestion has the same obligation
+    for real clones; the sandbox refuses a tree it could not read rather than analysing
+    an empty workspace and reporting a false clean.
+    """
+    tmp_path.chmod(0o755)
+    (tmp_path / "pkg").mkdir(mode=0o755)
     (tmp_path / "pkg" / "__init__.py").write_text("")
     (tmp_path / "pkg" / "module.py").write_text("def f(x):\n    return x + 1\n")
     return tmp_path

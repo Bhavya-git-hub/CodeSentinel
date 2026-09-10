@@ -16,6 +16,8 @@ could would eventually be a caller that did.
 from __future__ import annotations
 
 import json
+import os
+import stat
 import time
 import uuid
 from collections.abc import Iterator, Sequence
@@ -47,6 +49,12 @@ WORKSPACE_PATH = "/workspace"
 #: Writable scratch space. The root filesystem is read-only, so this is the only place
 #: the analysis tools can write, and it is discarded with the container.
 SCRATCH_PATH = "/tmp"
+
+#: The unprivileged uid/gid the analysis container runs as. Mounted source must be
+#: readable by it, which in practice means world-readable: this id will never match the
+#: host user that made the clone.
+SANDBOX_UID = 10001
+SANDBOX_GID = 10001
 
 #: Every container is labelled so orphans left by a crashed worker can be found and
 #: reaped, rather than accumulating invisibly on the host.
@@ -85,6 +93,33 @@ class Sandbox:
         if not self._source_dir.is_dir():
             raise SandboxConfigurationError(
                 f"source directory {self._source_dir} does not exist or is not a directory"
+            )
+        self._assert_source_readable()
+
+    def _assert_source_readable(self) -> None:
+        """Refuse a source tree the sandbox user could not read.
+
+        The container runs as an unprivileged uid that will never match the host user
+        which made the clone, so the mount has to be world-readable. When it is not,
+        every analyser sees an empty or unreadable workspace and reports no findings --
+        a silent false-clean result, which is the worst possible failure for a tool whose
+        entire output is "what is wrong with this code".
+
+        Checked rather than repaired: silently chmod-ing a host directory is a surprising
+        side effect, and the fix belongs to whatever created the clone.
+        """
+        if os.name != "posix":
+            # Windows mode bits do not describe container access; Docker Desktop mediates
+            # the mount itself. Nothing useful to assert here.
+            return
+
+        mode = self._source_dir.stat().st_mode
+        if not (mode & stat.S_IROTH and mode & stat.S_IXOTH):
+            raise SandboxConfigurationError(
+                f"source directory {self._source_dir} is not readable by the sandbox user "
+                f"(uid {SANDBOX_UID}); its mode is {stat.filemode(mode)}. Analysis would "
+                "silently see an empty workspace and report no findings. Make the clone "
+                "world-readable (chmod o+rX) before analysing it."
             )
 
     # -- lifecycle ------------------------------------------------------------------
@@ -278,7 +313,7 @@ class Sandbox:
             },
             # Non-root, even though the image already declares this user: relying on the
             # image alone means a rebuilt or substituted image could silently run as root.
-            "user": "10001:10001",
+            "user": f"{SANDBOX_UID}:{SANDBOX_GID}",
             "mem_limit": settings.sandbox_mem_limit,
             # Denying swap makes mem_limit an actual ceiling instead of a soft one.
             "memswap_limit": settings.sandbox_mem_limit,

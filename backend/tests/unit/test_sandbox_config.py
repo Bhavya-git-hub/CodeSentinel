@@ -9,6 +9,7 @@ could pass against a flag Docker ignores, and that one cannot run everywhere.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -160,5 +161,24 @@ def test_source_file_instead_of_directory_is_refused(tmp_path: Path) -> None:
         Sandbox(
             Settings(),
             source_dir=target,
+            client=_StubClient(),  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.skipif(
+    os.name != "posix",
+    reason="POSIX mode bits do not describe container access on Windows",
+)
+def test_an_unreadable_source_tree_is_refused(tmp_path: Path) -> None:
+    """A tree the sandbox user cannot read must fail loudly, not analyse nothing.
+
+    This is the failure that produces a clean report for a broken repository: every
+    analyser sees an empty workspace, finds nothing, and the scan looks healthy.
+    """
+    tmp_path.chmod(0o700)
+    with pytest.raises(SandboxConfigurationError, match="not readable by the sandbox user"):
+        Sandbox(
+            Settings(),
+            source_dir=tmp_path,
             client=_StubClient(),  # type: ignore[arg-type]
         )
