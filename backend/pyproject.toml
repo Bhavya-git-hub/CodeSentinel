@@ -9,8 +9,10 @@ description = "Code review and quality intelligence platform"
 requires-python = ">=3.11,<3.12"
 
 # Version floors express real API requirements (SQLAlchemy 2.x Mapped[] style,
-# Pydantic v2). Exact reproducible versions live in requirements.lock, which is
-# generated from a real resolution rather than hand-written.
+# Pydantic v2). No lock file is committed: a pip freeze taken on Windows pins pywin32
+# and omits the Linux-only uvloop and httptools, so it is wrong for the deployment
+# target in both directions. CI publishes the resolved Linux versions as an artifact
+# instead. See docs/adr/0008-dependency-pinning.md.
 #
 # Note: the target-repository analysis tools (pylint, bandit, semgrep, radon,
 # coverage) are deliberately NOT dependencies here. Constraint C1 requires them

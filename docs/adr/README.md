@@ -12,3 +12,4 @@ Format: context, decision, consequences. Numbered sequentially, never renumbered
 | [0005](0005-deferred-docker-verification.md) | Phase 1 ships without local Docker verification |
 | [0006](0006-worker-docker-access.md) | Worker access to the Docker daemon is deferred to phase 2 |
 | [0007](0007-ruff-and-mypy-for-first-party-code.md) | Ruff and mypy lint our code; Pylint and Bandit analyse targets |
+| [0008](0008-dependency-pinning.md) | Backend dependencies resolve from pyproject, not a committed lock |

@@ -17,12 +17,17 @@ RUN apt-get update \
     && apt-get install --no-install-recommends -y git \
     && rm -rf /var/lib/apt/lists/*
 
-# Dependencies are installed from the lock file first, in their own layer, so a source
-# change does not invalidate the dependency cache.
-COPY requirements.lock ./
-RUN pip install -r requirements.lock
-
+# Dependencies are resolved from pyproject in their own layer, so a source change does
+# not invalidate the dependency cache.
+#
+# Deliberately not installed from a committed lock file: a `pip freeze` taken on Windows
+# pins pywin32 (which has no Linux distribution) and omits the Linux-only uvloop and
+# httptools that uvicorn[standard] pulls, so it would both fail to build and silently
+# under-install. CI publishes the resolved Linux versions as an artifact instead.
+# See docs/adr/0008-dependency-pinning.md.
 COPY pyproject.toml ./
+RUN pip install .
+
 COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./
