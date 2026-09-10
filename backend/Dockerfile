@@ -20,7 +20,7 @@ RUN apt-get update \
 # Dependencies are installed from the lock file first, in their own layer, so a source
 # change does not invalidate the dependency cache.
 COPY requirements.lock ./
-RUN pip install --require-hashes=false -r requirements.lock
+RUN pip install -r requirements.lock
 
 COPY pyproject.toml ./
 COPY app ./app
