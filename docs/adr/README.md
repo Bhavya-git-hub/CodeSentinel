@@ -13,3 +13,5 @@ Format: context, decision, consequences. Numbered sequentially, never renumbered
 | [0006](0006-worker-docker-access.md) | Worker access to the Docker daemon is deferred to phase 2 |
 | [0007](0007-ruff-and-mypy-for-first-party-code.md) | Ruff and mypy lint our code; Pylint and Bandit analyse targets |
 | [0008](0008-dependency-pinning.md) | Backend dependencies resolve from pyproject, not a committed lock |
+| [0009](0009-sandbox-isolation-is-not-configurable.md) | Sandbox isolation is applied as a set, with no opt-out |
+| [0010](0010-container-cleanup-and-timeout-handling.md) | Containers are removed in a `finally`; timeouts kill rather than abandon |
