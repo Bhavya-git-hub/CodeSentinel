@@ -1,0 +1,67 @@
+# Analysis sandbox image.
+#
+# Target repositories are analysed *only* inside a container built from this image
+# (constraint C1). Cloning arbitrary repositories and, for coverage, executing their test
+# suites means running untrusted code: a target's conftest.py, setup.py or test fixtures
+# execute at collection time. The container this image produces has no network, a
+# read-only source mount, a non-root user and a dropped capability set.
+#
+# This image contains no CodeSentinel code and no credentials. It is a bag of analysis
+# tools plus an unprivileged user, and it is deliberately kept that way -- anything the
+# container can read, untrusted code can read.
+
+FROM python:3.11-slim
+
+# Analysis tool versions are pinned exactly. Constraint C5 requires a scan result to be
+# reproducible, and a result is only reproducible if the tool that produced it is known.
+# The versions are also written to a manifest below so the backend can record them per
+# scan without trusting the host environment (see docs/adr/0003).
+ARG PYLINT_VERSION=4.0.8
+ARG BANDIT_VERSION=1.9.4
+ARG SEMGREP_VERSION=1.177.0
+ARG RADON_VERSION=6.0.1
+ARG COVERAGE_VERSION=7.16.0
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# git is needed because some analysis steps inspect the working tree. The clone itself
+# happens outside the sandbox; this container never reaches the network.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    "pylint==${PYLINT_VERSION}" \
+    "bandit==${BANDIT_VERSION}" \
+    "semgrep==${SEMGREP_VERSION}" \
+    "radon==${RADON_VERSION}" \
+    "coverage==${COVERAGE_VERSION}"
+
+# Version manifest, generated from what was actually installed rather than from the build
+# arguments, so a resolver substitution cannot make the manifest lie. Kept in a separate
+# script rather than an inline heredoc: Dockerfile heredocs need a BuildKit syntax
+# directive to parse, and this way the generator is ordinary lintable Python.
+COPY write_tool_versions.py /usr/local/bin/write_tool_versions.py
+RUN mkdir -p /opt/codesentinel \
+    && python /usr/local/bin/write_tool_versions.py > /opt/codesentinel/tool-versions.json \
+    && cat /opt/codesentinel/tool-versions.json
+
+# Non-root. The container also runs with a read-only root filesystem, so HOME and the
+# various tool caches are pointed at the writable tmpfs the runner mounts at /tmp --
+# otherwise pylint and semgrep fail trying to create a cache directory.
+RUN useradd --create-home --uid 10001 analyst
+ENV HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache \
+    PYLINTHOME=/tmp/.pylint.d \
+    SEMGREP_SETTINGS_FILE=/tmp/.semgrep/settings.yml
+
+# The source is bind-mounted read-only at /workspace by the runner.
+WORKDIR /workspace
+USER analyst
+
+# No ENTRYPOINT: the runner always supplies an explicit command, and an entrypoint would
+# be one more thing that could quietly alter what gets executed.
+CMD ["python", "-c", "print('codesentinel analysis sandbox')"]
