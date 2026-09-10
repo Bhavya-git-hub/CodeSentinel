@@ -1,0 +1,108 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codesentinel"
+version = "0.1.0"
+description = "Code review and quality intelligence platform"
+requires-python = ">=3.11,<3.12"
+
+# Version floors express real API requirements (SQLAlchemy 2.x Mapped[] style,
+# Pydantic v2). Exact reproducible versions live in requirements.lock, which is
+# generated from a real resolution rather than hand-written.
+#
+# Note: the target-repository analysis tools (pylint, bandit, semgrep, radon,
+# coverage) are deliberately NOT dependencies here. Constraint C1 requires them
+# to run against target code inside the sandbox container, so they are installed
+# in sandbox/Dockerfile.analysis instead. See docs/adr/0003.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "celery>=5.4",
+    "redis>=5.2",
+    "docker>=7.1",
+    "GitPython>=3.1.43",
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.28",
+    "mypy>=1.13",
+    "ruff>=0.8",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # flake8-bugbear
+    "C4",        # flake8-comprehensions
+    "SIM",       # flake8-simplify
+    "RUF",
+    "BLE",       # flake8-blind-except -- enforces anti-pattern #9
+    "T20",       # flake8-print -- structured logging only
+]
+
+# SQLAlchemy, FastAPI and Pydantic all resolve annotations at runtime, so the
+# flake8-type-checking (TCH) rules are deliberately not enabled: moving uuid, datetime or
+# Settings into a TYPE_CHECKING block would satisfy the linter and break the ORM.
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+"alembic/versions/*" = ["E501", "N999"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*", "celery.*", "docker.*"]
+ignore_missing_imports = true
+
+# Celery ships no type information, so @celery_app.task is an untyped decorator.
+# Relaxing that single check for the workers package is narrower than ignoring the
+# module or taking on a third-party stub package for one decorator.
+[[tool.mypy.overrides]]
+module = ["app.workers.*"]
+disallow_untyped_decorators = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "requires_db: test needs a reachable PostgreSQL instance (CODESENTINEL_TEST_DATABASE_URL)",
+]
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
