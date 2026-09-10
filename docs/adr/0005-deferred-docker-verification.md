@@ -38,9 +38,16 @@ Redis by service name -- is unverified. This is stated rather than glossed.
 
 ## Consequences
 
-- **Phase 2 is hard-blocked.** Its acceptance criteria are that a container attempting a
-  network call fails, that an infinite-loop command is killed at the timeout, and that no
-  containers remain after a failed run. None can be demonstrated without a daemon, and
-  none can be honestly faked. Docker Desktop must be installed before phase 2 starts.
 - Constraint C1 is not exercised by anything in phase 1, because phase 1 executes no
   target-repository code at all.
+
+## Correction (phase 2)
+
+This ADR originally stated that phase 2 was **hard-blocked** until Docker was installed
+locally. That was wrong: GitHub Actions runners provide a real Docker daemon, so the
+sandbox acceptance criteria are fully demonstrable in CI under the same
+skip-locally / required-in-CI pattern used for the database tests. Phase 2 was completed
+and its criteria met in CI run 34525145554.
+
+The rest of this ADR stands. `docker compose up` is still unverified, and that remains
+the one phase 1 criterion not met.
