@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Environment
+.env
+.env.local
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Docker / data volumes
+pgdata/
+
+# Scan working data (cloned target repositories are never committed)
+workspace/
+clones/
+
+# OS / editor
+.DS_Store
+Thumbs.db
