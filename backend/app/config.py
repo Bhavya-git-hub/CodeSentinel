@@ -127,6 +127,19 @@ class Settings(BaseSettings):
     # four minutes in the worst case and clears almost every repository outright.
     szz_max_fixes_blamed: int = Field(default=2000, ge=1)
 
+    # -- Retention ------------------------------------------------------------------
+    # How long a terminal scan is kept. 0 disables pruning entirely, which is the
+    # default: an upgrade that silently began deleting an operator's scan history would
+    # be data loss nobody asked for, and the safe direction for a new default is to
+    # keep. See app/services/retention.py for why 0 is refused rather than treated as a
+    # cutoff of "now".
+    retention_days: int = Field(default=0, ge=0)
+    # How often the pruning task runs when retention is enabled. Hours rather than a
+    # cron expression: the window is measured in days, so the only thing this controls
+    # is how promptly an expired scan disappears, and nobody needs that at a specific
+    # hour of the day.
+    retention_interval_hours: float = Field(default=24.0, gt=0)
+
     @field_validator("cors_origins", "clone_allowed_protocols", "api_keys", mode="before")
     @classmethod
     def _split_comma_separated(cls, value: Any) -> Any:

@@ -12,11 +12,12 @@ does not exist.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from celery import Celery
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 
 
 def create_celery_app() -> Celery:
@@ -40,8 +41,31 @@ def create_celery_app() -> Celery:
         # Without this a worker never imports app.workers.tasks, so codesentinel.run_scan
         # is unregistered and every dispatched scan sits in the queue unreceived.
         imports=("app.workers.tasks",),
+        beat_schedule=beat_schedule(settings),
     )
     return app
+
+
+def beat_schedule(settings: Settings) -> dict[str, Any]:
+    """The periodic schedule, which is empty unless retention is switched on.
+
+    The entry is omitted rather than scheduled-and-skipped. A schedule that always
+    contains a pruning job makes ``celery inspect scheduled`` say this deployment prunes
+    when it does not, and an operator checking whether retention is live would read the
+    schedule and conclude it is. Absence is the accurate answer.
+    """
+    if settings.retention_days <= 0:
+        return {}
+    return {
+        "prune-expired-scans": {
+            "task": "codesentinel.prune_scans",
+            "schedule": timedelta(hours=settings.retention_interval_hours),
+            # A missed run must not stampede on restart: the next one deletes whatever
+            # the missed one would have, because the cutoff is computed from the clock
+            # rather than from the last run.
+            "options": {"expires": settings.retention_interval_hours * 3600},
+        }
+    }
 
 
 celery_app = create_celery_app()
