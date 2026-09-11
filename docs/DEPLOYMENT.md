@@ -108,6 +108,28 @@ on failure. If that volume grows, something is leaving trees behind — check th
 unreachable, submissions return 503 rather than becoming unmetered. Existing scans are
 unaffected.
 
+## The frontend and the API key
+
+The browser has to authenticate too, and a key in a browser bundle is not a secret —
+anyone who can load the page can read it. The client therefore looks for a key in this
+order:
+
+1. `localStorage.getItem("codesentinel.apiKey")` — per viewer, not shipped in the bundle.
+2. `VITE_CODESENTINEL_API_KEY` — baked in at build time, visible to every viewer.
+
+**For anything but a single-tenant internal deployment, use neither.** Put a gateway in
+front of the API that adds `X-API-Key` server-side, leave both unset, and the browser
+never holds a credential at all. That is the only topology where the key stays a secret.
+
+If you do use option 1, a viewer sets it once in the browser console:
+
+```js
+localStorage.setItem("codesentinel.apiKey", "<your key>");
+```
+
+A 401 from the API is reported with those instructions rather than as a generic failure,
+because the fix is a credential, not a retry.
+
 ## What is NOT production-hardened
 
 Stated plainly, because a deployment guide that lists only what works is the same failure

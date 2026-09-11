@@ -3,6 +3,27 @@ import type { DataSource, RiskQueue, ScanAccepted, ScanDetail } from "./types";
 const BASE = import.meta.env.VITE_CODESENTINEL_API_BASE ?? "";
 
 /**
+ * The API key sent with every request.
+ *
+ * Read at runtime from localStorage first, and only then from the build-time variable.
+ * The order matters: a key baked into the bundle is visible to everyone who can load the
+ * page, because a browser bundle is not a secret. That is acceptable for a single-tenant
+ * internal deployment and wrong for anything else, so the preferred production topology
+ * is a gateway in front of the API that adds the header server-side and leaves this
+ * unset. docs/DEPLOYMENT.md says so in those words.
+ */
+function apiKey(): string | undefined {
+  try {
+    const stored = window.localStorage.getItem("codesentinel.apiKey");
+    if (stored) return stored;
+  } catch {
+    // Private windows and blocked site data both throw. Fall through to the build-time
+    // value rather than failing the request here.
+  }
+  return import.meta.env.VITE_CODESENTINEL_API_KEY || undefined;
+}
+
+/**
  * A failed request, carrying the reason the API gave.
  *
  * The backend phrases its refusals for a person -- "The transport 'ext' is not
@@ -45,9 +66,14 @@ async function readDetail(response: Response): Promise<string> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
+    const key = apiKey();
     response = await fetch(`${BASE}${path}`, {
       ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      headers: {
+        "Content-Type": "application/json",
+        ...(key ? { "X-API-Key": key } : {}),
+        ...init?.headers,
+      },
     });
   } catch {
     // The network never reached the API. Kept distinct from an API that answered,
@@ -56,6 +82,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, `Could not reach the API at ${BASE || "this origin"}.`);
   }
 
+  if (response.status === 401) {
+    // Distinguished from a generic failure: the fix is a credential, not a retry.
+    throw new ApiError(
+      401,
+      "This API requires a key. Set one with " +
+        "localStorage.setItem('codesentinel.apiKey', '<your key>') and reload.",
+    );
+  }
   if (!response.ok) {
     throw new ApiError(response.status, await readDetail(response));
   }
