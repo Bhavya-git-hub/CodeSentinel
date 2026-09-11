@@ -108,9 +108,15 @@ async def list_scans(
     """Scans, newest first.
 
     Ordered by ``started_at`` descending and then by ``id`` descending. The second key is
-    not decoration: ``started_at`` has a server default, so two scans dispatched in the
-    same transaction can share a timestamp, and a sort with no tiebreak may return one of
-    them on two consecutive pages while never returning the other. The index
+    not decoration: ``started_at`` defaults to ``now()``, which in PostgreSQL is the
+    *transaction* clock rather than the statement clock, so scans written in one
+    transaction share an instant exactly. Without a tiebreak the sort is then
+    non-deterministic, and a paged read may return one of them on two consecutive pages
+    while never returning the other.
+
+    What the tiebreak buys is determinism, not recency: ``id`` is a random UUID, so scans
+    sharing a timestamp come back in an arbitrary but *stable* order. Each submission is
+    its own transaction in a real deployment, so ties are the exception there. The index
     ``ix_scans_repository_id_started_at`` does not serve this ordering, so a deployment
     with a long history will want one on ``started_at`` alone -- noted rather than added
     here, because adding an index is a migration and this endpoint is new enough that

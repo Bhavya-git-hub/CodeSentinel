@@ -7,6 +7,7 @@ is the worker's own test.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -112,16 +113,38 @@ async def test_a_scan_reports_its_counts(client: AsyncClient, db_session: AsyncS
     assert body["completed_at"] is None
 
 
-async def test_the_list_is_newest_first(client: AsyncClient) -> None:
-    """The history opens on what just happened, not on what happened first."""
-    for path in ("a/one", "b/two", "c/three"):
-        await client.post("/api/v1/scans", json={"url": f"https://example.com/{path}"})
+async def test_the_list_is_newest_first(client: AsyncClient, db_session: AsyncSession) -> None:
+    """The history opens on what just happened, not on what happened first.
+
+    The timestamps are set explicitly rather than left to three POSTs, and that is the
+    whole point of this test rather than a shortcut around it. PostgreSQL's ``now()`` is
+    the *transaction* clock: it returns the same instant for every statement in one
+    transaction. This module's session is a single rolled-back transaction, so three
+    scans submitted through the API here all carry an identical ``started_at``, and their
+    relative order falls through to the ``id`` tiebreak -- a random UUID, which says
+    nothing about recency.
+
+    An earlier version of this test did exactly that and CI caught it returning the
+    oldest first. It was asserting the harness's transaction semantics, not the ordering.
+    Distinct timestamps are what a real deployment produces, because each submission is
+    its own transaction.
+    """
+    for name, day in (("a/one", 1), ("b/two", 2), ("c/three", 3)):
+        repository = Repository(url=f"https://example.com/{name}", name=name)
+        db_session.add(repository)
+        await db_session.flush()
+        db_session.add(
+            Scan(
+                repository_id=repository.id,
+                status=ScanStatus.SUCCEEDED,
+                started_at=datetime(2026, 6, day, tzinfo=UTC),
+            )
+        )
+    await db_session.flush()
 
     body = (await client.get("/api/v1/scans")).json()
 
     assert body["total"] == 3
-    # owner/project, not the last segment: repository_name_from_url keeps the owner so
-    # two repositories both called "requests" stay distinguishable in a list.
     assert [row["repository_name"] for row in body["scans"]] == ["c/three", "b/two", "a/one"]
 
 
