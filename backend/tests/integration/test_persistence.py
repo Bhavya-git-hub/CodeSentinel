@@ -14,8 +14,8 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Commit, File, FileMetric, Repository, Scan
-from app.models.enums import ScanStatus
+from app.models import Commit, File, FileChange, FileMetric, Repository, Scan
+from app.models.enums import ChangeType, ScanStatus
 
 pytestmark = pytest.mark.requires_db
 
@@ -145,3 +145,71 @@ async def test_deleting_a_scan_cascades_to_its_metrics(db_session: AsyncSession)
         text("SELECT count(*) FROM file_metrics WHERE scan_id = :id"), {"id": scan.id}
     )
     assert remaining.scalar_one() == 0
+
+
+async def test_a_file_change_persists_without_a_file_row(db_session: AsyncSession) -> None:
+    """The nullable FK is the point of this table, so it is asserted through the database.
+
+    A file touched in history may have been deleted or renamed before HEAD, so it has no
+    row in ``files``. The model declares the column nullable; only a round trip proves the
+    migration made it nullable too. Were it NOT NULL, ingestion would drop exactly the
+    rows that matter -- churn on the files that churned most (C4).
+    """
+    repo = await _repository(db_session)
+    commit = Commit(
+        repository_id=repo.id,
+        sha="b" * 40,
+        authored_at=datetime.now(UTC),
+        message_summary="chore: remove dead module",
+    )
+    db_session.add(commit)
+    await db_session.flush()
+
+    change = FileChange(
+        commit_id=commit.id,
+        file_id=None,
+        path="pkg/removed.py",
+        lines_added=None,
+        lines_deleted=None,
+        change_type=ChangeType.DELETED,
+    )
+    db_session.add(change)
+    await db_session.flush()
+    db_session.expunge_all()
+
+    stored = (
+        await db_session.execute(select(FileChange).where(FileChange.id == change.id))
+    ).scalar_one()
+    assert stored.file_id is None
+    assert stored.path == "pkg/removed.py"
+    # Unknown, not zero: git reports "-" for a binary diff.
+    assert stored.lines_added is None
+    assert stored.change_type is ChangeType.DELETED
+
+
+async def test_a_file_change_is_removed_with_its_commit(db_session: AsyncSession) -> None:
+    """A change has no meaning detached from the commit that made it."""
+    repo = await _repository(db_session)
+    commit = Commit(repository_id=repo.id, sha="c" * 40, authored_at=datetime.now(UTC))
+    db_session.add(commit)
+    await db_session.flush()
+    db_session.add(
+        FileChange(
+            commit_id=commit.id,
+            path="pkg/module.py",
+            lines_added=4,
+            lines_deleted=1,
+            change_type=ChangeType.MODIFIED,
+        )
+    )
+    await db_session.flush()
+
+    await db_session.delete(commit)
+    await db_session.flush()
+
+    remaining = (
+        (await db_session.execute(select(FileChange).where(FileChange.commit_id == commit.id)))
+        .scalars()
+        .all()
+    )
+    assert remaining == []

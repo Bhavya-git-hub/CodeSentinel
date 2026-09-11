@@ -28,6 +28,7 @@ EXPECTED_TABLES = {
     "file_metrics",
     "findings",
     "commits",
+    "file_changes",
     "dependencies",
     "predictions",
 }

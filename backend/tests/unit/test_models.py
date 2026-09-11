@@ -6,12 +6,14 @@ quietly reintroduces a forbidden pattern fails here rather than in a report.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateIndex
 
-from app.models import Base, Commit, Dependency, FileMetric, Finding, Scan
-from app.models.enums import AnalyzerStatus, EdgeType, ScanStatus, Severity
+from app.models import Base, Commit, Dependency, FileChange, FileMetric, Finding, Scan
+from app.models.enums import AnalyzerStatus, ChangeType, EdgeType, ScanStatus, Severity
 
 METRIC_COLUMNS = (
     "cyclomatic_complexity",
@@ -137,6 +139,39 @@ def test_all_expected_tables_are_registered() -> None:
         "file_metrics",
         "findings",
         "commits",
+        "file_changes",
         "dependencies",
         "predictions",
     }
+
+
+def test_a_file_change_may_reference_a_path_with_no_file_row() -> None:
+    """A file touched in history may not exist at HEAD -- deleted, or renamed.
+
+    Dropping those rows would understate churn on exactly the files that churned most
+    (constraint C4: record the unresolvable rather than discarding it).
+    """
+    change = FileChange(
+        commit_id=uuid.uuid4(),
+        file_id=None,
+        path="pkg/removed.py",
+        lines_added=10,
+        lines_deleted=3,
+        change_type=ChangeType.DELETED,
+    )
+    assert change.file_id is None
+    assert change.path == "pkg/removed.py"
+
+
+def test_a_binary_file_change_has_no_line_counts() -> None:
+    """git reports '-' for binary diffs; that is unknown, not zero."""
+    change = FileChange(
+        commit_id=uuid.uuid4(),
+        file_id=None,
+        path="logo.png",
+        lines_added=None,
+        lines_deleted=None,
+        change_type=ChangeType.MODIFIED,
+    )
+    assert change.lines_added is None
+    assert change.lines_deleted is None

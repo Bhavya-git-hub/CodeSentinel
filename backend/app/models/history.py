@@ -25,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
+from app.models.enums import ChangeType, enum_column
 
 if TYPE_CHECKING:
     from app.models.repository import Repository
@@ -73,6 +74,43 @@ class Commit(UUIDPrimaryKeyMixin, Base):
     exclusion_reason: Mapped[str | None] = mapped_column(String(255))
 
     repository: Mapped[Repository] = relationship(back_populates="commits")
+
+
+class FileChange(UUIDPrimaryKeyMixin, Base):
+    """One file touched by one commit.
+
+    Phase 1's data model recorded only aggregate per-commit stats, but phase 4 ranks by
+    ``complexity x recency-weighted churn`` -- which is per file. This table has to be
+    populated during ingestion rather than later: the clone is deleted when the scan
+    ends, so this is the only moment the mapping exists without cloning again.
+
+    ``file_id`` is nullable and ``path`` is stored beside it because a file touched in
+    history may not exist at HEAD. Discarding those rows would understate churn on
+    exactly the files that churned most, which is the kind of quiet omission constraint
+    C4 forbids -- the same shape as ``dependencies.target_file_id``.
+    """
+
+    __tablename__ = "file_changes"
+    __table_args__ = (
+        Index("ix_file_changes_commit_id", "commit_id"),
+        Index("ix_file_changes_file_id", "file_id"),
+    )
+
+    commit_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("commits.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Null when the path has no row in ``files`` -- it was deleted or renamed before HEAD.
+    file_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("files.id", ondelete="CASCADE")
+    )
+    #: The path as it was AT that commit, which may differ from its path at HEAD.
+    path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    #: Null for a binary diff, which git reports as '-' rather than a number.
+    lines_added: Mapped[int | None] = mapped_column(Integer)
+    lines_deleted: Mapped[int | None] = mapped_column(Integer)
+    change_type: Mapped[ChangeType] = mapped_column(
+        enum_column(ChangeType, "change_type"), nullable=False
+    )
 
 
 class Prediction(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
