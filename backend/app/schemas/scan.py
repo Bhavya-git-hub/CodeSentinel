@@ -130,6 +130,18 @@ class BlastRadius(BaseModel):
     unresolved_edges: int
 
 
+class CommitRisk(BaseModel):
+    """One commit's modelled defect probability, with the evidence behind it.
+
+    ``model_version`` travels with the number because a probability is uninterpretable
+    without knowing what produced it (C5).
+    """
+
+    commit_sha: str
+    defect_probability: float
+    model_version: str
+
+
 class Limitation(BaseModel):
     """One thing this scan could not determine, and what it means for the reader.
 
@@ -166,6 +178,10 @@ class ScanReport(BaseModel):
     coverage_measured_files: int
 
     top_risks: list[FileRisk]
+    #: How many commits SZZ could label, and how many it blamed for a later fix.
+    commits_labelled: int
+    commits_defect_inducing: int
+    top_defect_risks: list[CommitRisk]
     limitations: list[Limitation]
     #: Settings in force when the scan was dispatched (C5).
     config: dict[str, Any]

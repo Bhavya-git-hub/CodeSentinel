@@ -28,6 +28,7 @@ from app.services.analyzers import findings as findings_analyzer
 from app.services.analyzers import radon
 from app.services.graph.imports import build_module_index, extract_imports
 from app.services.mining.churn import ChangeWeight, churn_score
+from app.services.prediction.pass_ import run_szz
 from app.services.sandbox.errors import SandboxError
 from app.services.sandbox.runner import Sandbox
 from app.services.scoring.risk import RiskInputs, score_files
@@ -173,6 +174,12 @@ async def run_analysis(
         session, scan_id=scan_id, clone_path=clone_path, files_by_path=files_by_path
     )
 
+    # SZZ runs here for the same reason everything else does: blame needs the repository
+    # on disk, and the pipeline deletes the clone when the scan ends.
+    szz_error = await run_szz(
+        session, scan_id=scan_id, repository_id=repository_id, clone_path=clone_path
+    )
+
     await _persist_findings(
         session,
         scan_id=scan_id,
@@ -194,6 +201,8 @@ async def run_analysis(
     ]
     if coverage_result.status is not AnalyzerStatus.SUCCESS and coverage_result.error:
         reasons.append(f"coverage was skipped: {coverage_result.error}")
+    if szz_error:
+        reasons.append(f"defect prediction is incomplete: {szz_error}")
 
     if analyzer_error:
         reasons.insert(0, analyzer_error)

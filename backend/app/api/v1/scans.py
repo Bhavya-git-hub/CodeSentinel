@@ -21,10 +21,11 @@ from app.api.deps import RedisDep, SessionDep, SettingsDep
 from app.api.ratelimit import enforce
 from app.models.code import Dependency, File, FileMetric, Finding
 from app.models.enums import ScanStatus, Severity
-from app.models.history import Commit
+from app.models.history import Commit, Prediction
 from app.models.repository import Repository, Scan
 from app.schemas.scan import (
     BlastRadius,
+    CommitRisk,
     FileRisk,
     FindingItem,
     FindingsPage,
@@ -360,6 +361,7 @@ def _limitations(
     total_files: int,
     unresolved_edges: int,
     coverage_files: int,
+    predictions_present: bool,
     analyzer_statuses: dict[str, Any],
 ) -> list[Limitation]:
     """What this scan could not determine, phrased for a reader to act on.
@@ -404,6 +406,19 @@ def _limitations(
                     "The sandbox has no network, so a target whose tests need third-party "
                     "packages cannot run them. No file here is known to be untested; they "
                     "are unmeasured, which is a different thing."
+                ),
+            )
+        )
+
+    if total_files and not predictions_present:
+        limits.append(
+            Limitation(
+                subject="Defect prediction",
+                detail="No commit carries a modelled defect probability.",
+                consequence=(
+                    "SZZ labels only the commits it can reach, and a probability computed "
+                    "over a handful of them is noise. An empty list here means the model "
+                    "declined, not that no commit is risky."
                 ),
             )
         )
@@ -490,6 +505,43 @@ async def get_scan_report(
         ).scalar_one()
     )
 
+    labelled = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Commit)
+                .where(
+                    Commit.repository_id == scan.repository_id,
+                    Commit.is_defect_inducing.is_not(None),
+                )
+            )
+        ).scalar_one()
+    )
+    inducing = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Commit)
+                .where(
+                    Commit.repository_id == scan.repository_id,
+                    Commit.is_defect_inducing.is_(True),
+                )
+            )
+        ).scalar_one()
+    )
+    prediction_rows = (
+        (
+            await session.execute(
+                select(Prediction)
+                .where(Prediction.scan_id == scan_id)
+                .order_by(Prediction.defect_probability.desc())
+                .limit(top)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     return ScanReport(
         scan_id=scan_id,
         status=scan.status,
@@ -520,11 +572,22 @@ async def get_scan_report(
             )
             for metric, file in metric_rows
         ],
+        commits_labelled=labelled,
+        commits_defect_inducing=inducing,
+        top_defect_risks=[
+            CommitRisk(
+                commit_sha=row.commit_sha,
+                defect_probability=row.defect_probability,
+                model_version=row.model_version,
+            )
+            for row in prediction_rows
+        ],
         limitations=_limitations(
             unmeasured=unmeasured,
             total_files=total_metrics,
             unresolved_edges=unresolved_edges,
             coverage_files=coverage_files,
+            predictions_present=bool(prediction_rows),
             analyzer_statuses=scan.analyzer_statuses,
         ),
         config=scan.config,

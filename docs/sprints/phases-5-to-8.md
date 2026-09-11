@@ -89,11 +89,9 @@ silently.
 - **Body-level filtering of `POST /containers/create`** (ADR 0015). Until it exists, the
   worker's integrity is a security boundary, tolerable only because the worker never
   executes target code (ADR 0011).
-- **The SZZ pass is not yet wired into the pipeline.** `szz.py` provides the labelling
-  primitives and they are tested; running them over a scan's history, and persisting
-  `is_bugfix` / `is_defect_inducing`, is not done. The columns stay NULL, which is the
-  correct representation of "the pass has not run" — but no scan currently populates them.
-- **No `Prediction` rows are produced.** The table and model exist from phase 1; nothing
-  writes to them.
+- ~~The SZZ pass is not yet wired into the pipeline.~~ **Done.** `blame.py`, `model.py`
+  and `pass_.py` complete it: the pass labels commits, blames the lines each fix repaired,
+  writes `is_bugfix` / `is_defect_inducing`, and produces `Prediction` rows. Exposed in the
+  report as `commits_labelled`, `commits_defect_inducing` and `top_defect_risks`.
 - **The frontend covers only the risk queue.** Findings, impact and report endpoints have
   no UI.

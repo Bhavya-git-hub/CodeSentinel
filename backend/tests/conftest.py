@@ -388,3 +388,23 @@ def _rate_limiter_backend(app) -> Iterator[None]:  # type: ignore[no-untyped-def
     app.dependency_overrides[_redis] = _override
     yield
     app.dependency_overrides.pop(_redis, None)
+
+
+@pytest.fixture
+def git_repo_with_fix(git_repo: Path, git_binary: str) -> Path:
+    """The fixture repository plus a defect and a commit that fixes it.
+
+    Built as two real commits so blame has something true to find: the bug is introduced
+    on one line, and the fix replaces exactly that line. Any correct SZZ pass must name
+    the introducing commit and must not name the fix itself.
+    """
+    module = git_repo / "pkg" / "buggy.py"
+    module.write_text("def divide(x):\n    return x / 0\n", encoding="utf-8")
+    _git(git_binary, git_repo, "add", "-A")
+    _git(git_binary, git_repo, "commit", "-m", "feat: add divide", "--quiet")
+
+    module.write_text("def divide(x):\n    return x / 1\n", encoding="utf-8")
+    _git(git_binary, git_repo, "add", "-A")
+    _git(git_binary, git_repo, "commit", "-m", "fix: crash on divide by zero", "--quiet")
+
+    return git_repo
