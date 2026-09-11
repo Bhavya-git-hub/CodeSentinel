@@ -318,19 +318,32 @@ jobs:
           print(json.dumps(statuses, indent=1))
           ranked = d["total_files"] - d["unmeasured"]
           print(f"ranked={ranked} of {d['total_files']}")
-          failed = {k: v for k, v in statuses.items()
-                    if isinstance(v, dict) and v.get("error")}
-          assert not failed, f"an analyser failed: {failed}"
+
+          # The measurement, not the status. A status of PARTIAL is compatible with every
+          # analyser having failed, so it cannot carry this assertion; a non-zero count of
+          # ranked files can only happen if Radon actually ran inside the sandbox.
           assert ranked > 0, (
               "every file came back unmeasured, so no analyser produced anything", d
           )
+
+          # An analyser reporting that it could NOT run is a correct outcome, not a
+          # failure: coverage drives the target's suite, the sandbox has no network, and a
+          # target whose tests need third-party packages cannot install them (ADR 0009).
+          # Demanding a clean status here would make the honest result a red build, and
+          # would pressure the next person into weakening the skip instead.
+          #
+          # Only an explicit "failed" is a failure. Reasons print either way, so a skip is
+          # never silent.
+          broken = {k: v for k, v in statuses.items()
+                    if isinstance(v, dict) and v.get("status") == "failed"}
+          assert not broken, f"an analyser failed outright: {broken}"
           PYCHECK
 
       - name: The report states what it could not determine
         run: |
           set -euo pipefail
           id="$(curl -fsS 'http://localhost:8000/api/v1/scans?limit=1'             | python -c "import sys,json; print(json.load(sys.stdin)['scans'][0]['scan_id'])")"
-          curl -fsS "http://localhost:8000/api/v1/scans/$id/report"             | python -c "import sys,json; d=json.load(sys.stdin);               print(json.dumps({k: d[k] for k in ('status','files_ranked','files_unmeasured','findings_total','dependency_edges','commit_count')}, indent=1));               assert isinstance(d['limitations'], list), d;               assert d['config'], 'the reproducibility snapshot is empty (C5)'"
+          curl -fsS "http://localhost:8000/api/v1/scans/$id/report"             | python -c "import sys,json; d=json.load(sys.stdin);               print(json.dumps({k: d[k] for k in ('status','files_ranked','files_unmeasured','findings_total','findings_by_severity','dependency_edges','coverage_measured_files','commit_count')}, indent=1));               assert isinstance(d['limitations'], list), d;               assert d['config'], 'the reproducibility snapshot is empty (C5)'"
 
       - name: Logs
         if: always()
