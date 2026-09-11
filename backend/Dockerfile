@@ -48,9 +48,12 @@ RUN useradd --create-home --uid 10001 appuser \
 # handle; and chowning from an entrypoint, which needs root at start-up for the same
 # reason. Creating it here costs one empty directory and keeps the container unprivileged.
 #
-# Caveat worth knowing: this works for named volumes only. A bind mount takes the HOST
-# directory's ownership and masks the image's, so anyone swapping `clones` for a bind
-# mount must chown the host path to 10001 themselves.
+# This covers a named volume or a plain `docker run` with no mount at all. It does NOT
+# cover the compose stack, which bind-mounts a host directory here: a bind mount takes the
+# host's ownership and masks whatever the image has. That host directory must be chowned
+# to 10001 before first start, and docs/DEPLOYMENT.md makes it a step rather than a note.
+# The bind mount is not optional -- see the worker service in docker-compose.yml for why
+# the clone root cannot be a named volume.
 #
 # The path is duplicated from Settings.clone_root. If that default changes, this must
 # change with it -- a mismatch is silent until a scan actually runs.

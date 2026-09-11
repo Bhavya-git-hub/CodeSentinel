@@ -41,7 +41,7 @@ services:
       CODESENTINEL_ENVIRONMENT: local
       CODESENTINEL_DATABASE_URL: postgresql+asyncpg://codesentinel:codesentinel@postgres:5432/codesentinel
       CODESENTINEL_REDIS_URL: redis://redis:6379/0
-      CODESENTINEL_CLONE_ROOT: /var/lib/codesentinel/clones
+      CODESENTINEL_CLONE_ROOT: ${CODESENTINEL_CLONE_ROOT:-/var/lib/codesentinel/clones}
     ports:
       - "8000:8000"
     depends_on:
@@ -75,9 +75,24 @@ services:
       docker-proxy:
         condition: service_started
     volumes:
-      # Cloned target repositories. Never mounted into the API, and from phase 2 mounted
-      # read-only into the sandbox container that analyses them.
-      - clones:/var/lib/codesentinel/clones
+      # Cloned target repositories, bind-mounted at the SAME path on both sides.
+      #
+      # This has to be a host path, not a named volume, and the paths have to match. The
+      # worker asks the daemon to start an analysis container with a read-only bind mount
+      # of the clone; the daemon runs on the host and resolves that source against the
+      # HOST filesystem. With a named volume the path exists only inside the worker, and
+      # container creation fails with "bind source path does not exist" -- which is
+      # exactly what the first real scan did.
+      #
+      # Rejected: mounting the whole clones volume into the sandbox by name. It works, and
+      # it lets one target's analysis container read every other target's clone. ADR 0009
+      # does not trade isolation for convenience, and per-scan mounting is the property
+      # being protected here.
+      #
+      # The directory must exist on the host and be owned by uid 10001 before first start
+      # -- a bind mount takes the host's ownership and masks the image's. docs/DEPLOYMENT.md
+      # has the command.
+      - ${CODESENTINEL_CLONE_ROOT:-/var/lib/codesentinel/clones}:${CODESENTINEL_CLONE_ROOT:-/var/lib/codesentinel/clones}
     healthcheck:
       # Asks this worker specifically, by the name Celery registers it under. A bare
       # `celery inspect ping` answers if ANY worker replies, so a dead replica in a pool
@@ -155,4 +170,4 @@ services:
 
 volumes:
   pgdata:
-  clones:
+  # No `clones` volume: see the worker's bind mount above for why it cannot be one.

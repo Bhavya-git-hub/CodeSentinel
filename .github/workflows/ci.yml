@@ -218,6 +218,16 @@ jobs:
         # the daemon. The worker reaches that same daemon through the socket proxy.
         run: docker build -f sandbox/Dockerfile.analysis -t codesentinel/analysis:0.1.0 sandbox/
 
+      - name: Prepare the host clone directory
+        # A bind mount, not a named volume: the worker asks the daemon to bind-mount each
+        # clone into an analysis container, and the daemon resolves that path on the HOST.
+        # It therefore has to exist on the host and be writable by the image's uid, which
+        # a bind mount will not inherit from the image.
+        run: |
+          sudo mkdir -p /var/lib/codesentinel/clones
+          sudo chown -R 10001:10001 /var/lib/codesentinel
+          ls -ld /var/lib/codesentinel/clones
+
       - name: Start the stack
         # The proxy needs the host's docker gid to read the socket, and it now refuses to
         # start without it -- so this line is what keeps the stack from coming up broken.

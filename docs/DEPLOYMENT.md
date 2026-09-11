@@ -47,7 +47,34 @@ Set `CODESENTINEL_CORS_ORIGINS` to the exact origin serving the frontend. Not a 
 the API is authenticated, and a wildcard origin plus a browser-held key is a credential any
 site can borrow.
 
-## 2. Start
+## 2. Prepare the host
+
+Two things must exist on the host before the stack starts. Both were found by the first
+real `docker compose up` rather than reasoned out in advance, and both fail in ways that
+look like something else.
+
+```bash
+# The clone directory. A bind mount, not a named volume -- the worker asks the daemon to
+# bind-mount each clone into an analysis container, and the daemon resolves that path on
+# the HOST, so it has to mean the same thing on both sides. A bind mount does not inherit
+# ownership from the image, so it must be chowned to the image's uid.
+sudo mkdir -p /var/lib/codesentinel/clones
+sudo chown -R 10001:10001 /var/lib/codesentinel
+
+# The Docker socket's group. The proxy runs unprivileged and the socket is root:docker
+# mode 660, so without this it cannot read the socket at all.
+echo "CODESENTINEL_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
+```
+
+If the gid is wrong the proxy **refuses to start**, which is deliberate: it used to start
+cleanly and return 500 to every request, and every layer above it degraded politely into
+"the sandbox was unavailable", so a whole deployment could report scans with no findings
+and nothing would name the cause.
+
+Set `CODESENTINEL_CLONE_ROOT` if you want the clones somewhere else; it is used as both
+sides of the bind mount, so the two cannot drift apart.
+
+## 3. Start
 
 ```bash
 # Terminating TLS somewhere else (an existing ingress, a cloud load balancer):
@@ -69,7 +96,7 @@ encrypted one and nothing in the application can tell which route a caller took.
 certificate is proof of control over a name, and there is no way to prove control of one
 that does not point here. See [ADR 0021](adr/0021-tls-is-a-separate-overlay.md).
 
-## 3. Migrate
+## 4. Migrate
 
 Migrations are **not** run automatically at start-up. Two API replicas racing to migrate
 the same database is a corruption risk, and an automatic migration makes a rollback into
@@ -80,7 +107,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api \
   alembic upgrade head
 ```
 
-## 4. Verify
+## 5. Verify
 
 ```bash
 # Readiness: reports unhealthy while any dependency is down, by design.

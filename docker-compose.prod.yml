@@ -64,7 +64,7 @@ services:
       CODESENTINEL_ENVIRONMENT: production
       CODESENTINEL_DATABASE_URL: postgresql+asyncpg://codesentinel:${POSTGRES_PASSWORD:?}@postgres:5432/codesentinel
       CODESENTINEL_REDIS_URL: redis://redis:6379/0
-      CODESENTINEL_CLONE_ROOT: /var/lib/codesentinel/clones
+      CODESENTINEL_CLONE_ROOT: ${CODESENTINEL_CLONE_ROOT:-/var/lib/codesentinel/clones}
       DOCKER_HOST: tcp://docker-proxy:2375
       # Must match beat's value; see the note there.
       CODESENTINEL_RETENTION_DAYS: ${CODESENTINEL_RETENTION_DAYS:-0}
