@@ -1,0 +1,80 @@
+# TLS termination, as a third overlay on top of the production stack.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tls.yml up -d
+#
+# Required in the environment, in addition to everything docker-compose.prod.yml needs:
+#
+#   CODESENTINEL_DOMAIN   the hostname this is served on, e.g. codesentinel.example.com
+#   CODESENTINEL_ACME_EMAIL  where Let's Encrypt sends expiry warnings
+#
+# --- Why this is a separate file ----------------------------------------------------
+#
+# A certificate needs a real hostname that resolves to this machine. That is true of a
+# deployment and false of every CI runner and every laptop, so folding this into
+# docker-compose.prod.yml would make the production overlay unvalidatable and untestable
+# anywhere the certificate cannot actually be issued. Splitting it keeps the overlay CI
+# checks meaningful and makes "we terminate TLS somewhere else" a supported answer
+# rather than a file to edit.
+#
+# --- What it changes ----------------------------------------------------------------
+#
+# One public port, 443 (and 80, which only redirects). The API and the frontend stop
+# publishing ports of their own and are reachable only through the proxy, on the compose
+# network. That is the difference that matters: without it, a firewall gap leaves the
+# plaintext API listening beside the encrypted one, and nothing in the application can
+# tell that its caller took the unencrypted route.
+#
+# --- What it does NOT do ------------------------------------------------------------
+#
+# It does not add the X-API-Key header. docs/DEPLOYMENT.md recommends a gateway that
+# does, so the browser never holds a credential -- but a proxy that injects the key
+# makes *reaching the proxy* the whole of authentication, and this file has no opinion
+# about who can reach it. Turning that on is a deliberate act that has to come with its
+# own access control (a VPN, mTLS, an SSO forward-auth). The Caddyfile carries the
+# directive, commented, next to that warning.
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      # QUIC. Harmless if the host firewall drops it; Caddy falls back to TCP.
+      - "443:443/udp"
+    environment:
+      CODESENTINEL_DOMAIN: ${CODESENTINEL_DOMAIN:?set the hostname this is served on}
+      CODESENTINEL_ACME_EMAIL: ${CODESENTINEL_ACME_EMAIL:?set an address for certificate expiry warnings}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Issued certificates and the ACME account key. Losing this volume is not fatal --
+      # Caddy re-issues -- but it is how you hit Let's Encrypt's rate limit by restarting.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  api:
+    # Reachable only through the proxy from here on. `!override` rather than `ports: []`:
+    # a plain empty list appends to the base file's mapping instead of replacing it,
+    # which would leave 8000 published and the whole point of this file undone.
+    ports: !override []
+    environment:
+      # Same origin as the frontend now, so the browser makes no cross-origin request at
+      # all. Left explicit rather than removed: the value still has to be right if anyone
+      # reaches the API directly from another origin, and an unset list is not a wildcard.
+      CODESENTINEL_CORS_ORIGINS: https://${CODESENTINEL_DOMAIN:?}
+
+  frontend:
+    ports: !override []
+
+volumes:
+  caddy_data:
+  caddy_config:

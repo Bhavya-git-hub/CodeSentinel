@@ -78,6 +78,34 @@ services:
       # Cloned target repositories. Never mounted into the API, and from phase 2 mounted
       # read-only into the sandbox container that analyses them.
       - clones:/var/lib/codesentinel/clones
+    healthcheck:
+      # Asks this worker specifically, by the name Celery registers it under. A bare
+      # `celery inspect ping` answers if ANY worker replies, so a dead replica in a pool
+      # of two would report itself healthy on its neighbour's answer.
+      test:
+        [
+          "CMD-SHELL",
+          "celery -A app.workers.celery_app:celery_app inspect ping -d celery@$$(hostname) >/dev/null",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  beat:
+    # The periodic scheduler. Exactly one replica, always -- two beats sharing a schedule
+    # dispatch every periodic entry twice, and the entry scheduled here deletes rows.
+    # It runs no work itself; it only puts messages on the queue the workers read, which
+    # is why it needs neither the clones volume nor a route to the Docker proxy.
+    build:
+      context: ./backend
+    command: ["celery", "-A", "app.workers.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    environment:
+      <<: *backend_env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   docker-proxy:
     # Holds the Docker socket so the worker does not, and validates the BODY of every

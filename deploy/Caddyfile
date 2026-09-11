@@ -1,0 +1,70 @@
+# TLS termination and one public origin for CodeSentinel.
+#
+# Used by docker-compose.tls.yml. Caddy obtains and renews a certificate automatically
+# over ACME, which is why CODESENTINEL_DOMAIN must be a name that actually resolves to
+# this machine -- there is no way to prove control of a hostname that does not.
+
+{
+	email {$CODESENTINEL_ACME_EMAIL}
+}
+
+{$CODESENTINEL_DOMAIN} {
+	encode zstd gzip
+
+	# The API and the SPA are served from one origin on purpose. Same-origin means the
+	# browser makes no preflight request and holds no cross-origin credential, which
+	# removes the whole class of mistake where a wildcard CORS origin plus a
+	# browser-held key becomes a credential any site can borrow.
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Health probes, so an external monitor can reach readiness without a second
+	# hostname. These are unauthenticated by design and report only whether
+	# dependencies are reachable.
+	handle /health* {
+		reverse_proxy api:8000
+	}
+
+	# /metrics is deliberately NOT proxied. It is unauthenticated when enabled, and
+	# publishing it here would put this instance's scan volumes on the open internet.
+	# Scrape it from inside the compose network instead. If it genuinely has to be
+	# reachable from outside, give it its own matcher with its own access control --
+	# and note that adding one here is a decision, not a convenience.
+
+	# Everything else is the single-page app. Its container already rewrites unknown
+	# paths to index.html, so a refresh on /scans/<id> works.
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	header {
+		# Two years, because a shorter max-age is a window in which a downgrade works.
+		# Remove this line if you are still testing: HSTS is remembered by the browser
+		# and is awkward to take back.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# This app loads no third-party script and makes no cross-origin request, so the
+		# policy can be this tight. It will need widening if a font or an analytics
+		# script is ever added -- widen it deliberately rather than removing it.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		-Server
+	}
+
+	# --- The gateway topology, deliberately left off --------------------------------
+	#
+	# docs/DEPLOYMENT.md recommends putting the API key in here rather than in the
+	# browser, so no viewer ever holds a credential:
+	#
+	#     handle /api/* {
+	#         header_up X-API-Key {$CODESENTINEL_GATEWAY_API_KEY}
+	#         reverse_proxy api:8000
+	#     }
+	#
+	# Uncommenting that makes *reaching this proxy* the entirety of authentication. It
+	# is the right answer only once something else decides who may reach it -- a VPN,
+	# mTLS, or an SSO forward_auth in front of this block. Turning it on without that
+	# converts an authenticated API into an open one, and the change looks like a
+	# simplification while it is happening.
+}

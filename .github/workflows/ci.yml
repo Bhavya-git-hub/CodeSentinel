@@ -174,6 +174,22 @@ jobs:
           # appending to it, which is what a plain `ports: []` would do.
           docker compose -f docker-compose.yml -f docker-compose.prod.yml config             | python -c "import sys,yaml; d=yaml.safe_load(sys.stdin);                 p=d['services']['postgres'].get('ports') or [];                 sys.exit(0 if not p else f'postgres still publishes {p}')"
 
+      - name: Validate the TLS overlay
+        # A separate file because a certificate needs a hostname that resolves here,
+        # which no CI runner has. Validating it is still worth doing: the overlay uses
+        # `!override` to unpublish the API and frontend ports, and an overlay that
+        # appended instead would leave the plaintext API listening beside the encrypted
+        # one with nothing in the application able to tell which route a caller took.
+        env:
+          POSTGRES_PASSWORD: ci-validation-only
+          CODESENTINEL_API_KEYS: ci-validation-only
+          CODESENTINEL_CORS_ORIGINS: https://example.invalid
+          CODESENTINEL_DOMAIN: example.invalid
+          CODESENTINEL_ACME_EMAIL: ops@example.invalid
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tls.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tls.yml config             | python -c "import sys,yaml; d=yaml.safe_load(sys.stdin);                 bad=[n for n in ('api','frontend') if d['services'][n].get('ports')];                 sys.exit(0 if not bad else f'{bad} still publish ports behind TLS')"
+
       - name: Refuse to start production without credentials
         # The failure mode this guards is a deployment that silently falls back to the
         # development password published in this repository.

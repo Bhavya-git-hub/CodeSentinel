@@ -48,6 +48,10 @@ services:
       CODESENTINEL_API_KEYS: ${CODESENTINEL_API_KEYS:?set CODESENTINEL_API_KEYS; the API refuses to start in production without one}
       CODESENTINEL_CORS_ORIGINS: ${CODESENTINEL_CORS_ORIGINS:?set the origin the frontend is served from}
       CODESENTINEL_SCAN_RATE_LIMIT_PER_MINUTE: ${CODESENTINEL_SCAN_RATE_LIMIT_PER_MINUTE:-10}
+      # Off unless asked for. When on, /metrics is unauthenticated -- keep it on the
+      # compose network and scrape it from inside, or put it behind the reverse proxy's
+      # own access control. See ADR 0018.
+      CODESENTINEL_METRICS_ENABLED: ${CODESENTINEL_METRICS_ENABLED:-false}
     restart: unless-stopped
     deploy:
       replicas: 2
@@ -62,6 +66,8 @@ services:
       CODESENTINEL_REDIS_URL: redis://redis:6379/0
       CODESENTINEL_CLONE_ROOT: /var/lib/codesentinel/clones
       DOCKER_HOST: tcp://docker-proxy:2375
+      # Must match beat's value; see the note there.
+      CODESENTINEL_RETENTION_DAYS: ${CODESENTINEL_RETENTION_DAYS:-0}
       # Each worker needs its own identity so reap_orphans collects only its own
       # leftovers and never another worker's live containers (ADR 0010). Compose gives
       # each replica a distinct hostname, which is what worker_id defaults to.
@@ -78,6 +84,26 @@ services:
           # are bounded separately by sandbox_mem_limit and are not counted here,
           # because the daemon runs them as siblings rather than as children.
           memory: 1g
+
+  beat:
+    environment:
+      CODESENTINEL_ENVIRONMENT: production
+      CODESENTINEL_DATABASE_URL: postgresql+asyncpg://codesentinel:${POSTGRES_PASSWORD:?}@postgres:5432/codesentinel
+      CODESENTINEL_REDIS_URL: redis://redis:6379/0
+      # Beat builds its schedule from this at start-up, so it must agree with the
+      # worker's value: beat decides whether the pruning entry exists at all, and the
+      # worker decides what cutoff it applies. A mismatch is a job that fires and then
+      # declines to do anything, which looks like a broken schedule.
+      CODESENTINEL_RETENTION_DAYS: ${CODESENTINEL_RETENTION_DAYS:-0}
+      CODESENTINEL_RETENTION_INTERVAL_HOURS: ${CODESENTINEL_RETENTION_INTERVAL_HOURS:-24}
+    restart: unless-stopped
+    deploy:
+      # Never more than one. Two schedulers sharing a schedule dispatch every entry
+      # twice; here that means two pruning passes racing on the same DELETE.
+      replicas: 1
+      resources:
+        limits:
+          memory: 256m
 
   docker-proxy:
     restart: unless-stopped
