@@ -1,6 +1,6 @@
 # 0006. Worker access to the Docker daemon is deferred to phase 2
 
-**Status:** accepted — 2026-09-11
+**Status:** superseded by [0013](0013-worker-docker-access.md) — 2026-09-11
 
 ## Context
 
@@ -25,3 +25,6 @@ actually built, with the threat model in front of us.
 
 - Phase 1's compose stack cannot run analyses. It is not supposed to.
 - Phase 2 must open with this decision rather than inheriting it by default.
+- Phase 2 did not in fact answer this: its tests drive the `Sandbox` service directly,
+  so no worker needed a daemon. The question reached phase 3 still open and is settled
+  there — see [ADR 0013](0013-worker-docker-access.md).
