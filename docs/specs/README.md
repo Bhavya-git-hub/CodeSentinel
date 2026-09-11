@@ -14,3 +14,4 @@ breaks it into tasks with their tests. Executors read both.
 | Phase | Design | Plan |
 |---|---|---|
 | 3 — Ingestion | [spec](phase-3-ingestion.md) | [plan](phase-3-ingestion-plan.md) |
+| 4 — Risk prioritisation | [spec](phase-4-risk-prioritisation.md) | — (implemented directly) |
