@@ -354,3 +354,129 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v --remove-orphans
+
+  smoke-prod:
+    name: Run the production stack
+    runs-on: ubuntu-latest
+    # The production and TLS overlays had never been started either. They are the files
+    # an operator actually deploys with, and they carry everything the base stack does
+    # not: real credentials, replica counts, the `!override` port removals, and a reverse
+    # proxy terminating TLS. Validating them with `config` proves they parse.
+    env:
+      COMPOSE: -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.tls.yml
+      POSTGRES_PASSWORD: smoke-only-not-a-real-secret
+      CODESENTINEL_API_KEYS: ci-smoke:smoke-only-not-a-real-secret
+      CODESENTINEL_CORS_ORIGINS: https://localhost
+      # Caddy issues from its own internal CA for `localhost` without contacting an ACME
+      # server, so the real Caddyfile is exercised unmodified. What this does NOT cover is
+      # public ACME issuance, which needs a hostname that resolves to the runner.
+      CODESENTINEL_DOMAIN: localhost
+      CODESENTINEL_ACME_EMAIL: ops@example.invalid
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the analysis image the worker will start
+        run: docker build -f sandbox/Dockerfile.analysis -t codesentinel/analysis:0.1.0 sandbox/
+
+      - name: Prepare the host clone directory
+        run: |
+          sudo mkdir -p /var/lib/codesentinel/clones
+          sudo chown -R 10001:10001 /var/lib/codesentinel
+
+      - name: Refuse to start without credentials
+        # The overlay uses ${VAR:?} so a deployment cannot fall back to the development
+        # password published in this repository. Asserted against the real `up`, not
+        # against `config`, because starting is the thing that must not happen.
+        run: |
+          set -uo pipefail
+          if env -u POSTGRES_PASSWORD -u CODESENTINEL_API_KEYS \
+               docker compose $COMPOSE up -d --no-build 2>/dev/null; then
+            echo "the production stack started with no credentials configured" >&2
+            docker compose $COMPOSE down -v --remove-orphans || true
+            exit 1
+          fi
+          echo "correctly refused"
+
+      - name: Start the production stack behind TLS
+        run: |
+          CODESENTINEL_DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+          echo "CODESENTINEL_DOCKER_GID=$CODESENTINEL_DOCKER_GID" >> "$GITHUB_ENV"
+          CODESENTINEL_DOCKER_GID="$CODESENTINEL_DOCKER_GID" \
+            docker compose $COMPOSE up -d --build --wait --wait-timeout 420
+          docker compose $COMPOSE ps
+
+      - name: Both API and worker replicas are actually running
+        # `replicas: 2` and a published port are mutually exclusive, and nothing caught
+        # that while these files were only ever validated rather than started.
+        run: |
+          set -euo pipefail
+          for service in api worker; do
+            count="$(docker compose $COMPOSE ps -q "$service" | wc -l)"
+            echo "$service replicas running: $count"
+            [ "$count" -eq 2 ] || { echo "expected 2 $service replicas, got $count" >&2; exit 1; }
+          done
+          beat="$(docker compose $COMPOSE ps -q beat | wc -l)"
+          # Exactly one, always: two schedulers dispatch every periodic entry twice, and
+          # the entry this stack schedules deletes rows.
+          [ "$beat" -eq 1 ] || { echo "expected 1 beat, got $beat" >&2; exit 1; }
+
+      - name: Nothing but the proxy is reachable from the host
+        # The `!override` removals, checked at runtime rather than in the rendered config.
+        # A firewall gap plus a still-published plaintext API is invisible to the
+        # application: nothing in it can tell which route a caller took.
+        run: |
+          set -uo pipefail
+          closed=0
+          for port in 5432 6379 8000 5173; do
+            if timeout 2 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+              echo "port $port is published and must not be" >&2
+              closed=1
+            else
+              echo "port $port closed"
+            fi
+          done
+          exit $closed
+
+      - name: TLS terminates and serves the app
+        run: |
+          set -euo pipefail
+          # -k: the certificate is from Caddy's internal CA, which this runner does not
+          # trust. What is being checked is that TLS is terminated and routed, not that a
+          # public CA signed it -- that part remains unexercised and is said so plainly.
+          curl -fsS -k https://localhost/ | grep -qi "<title>"
+          echo "https serves the SPA"
+          code="$(curl -s -o /dev/null -w '%{http_code}' -k http://localhost/)"
+          echo "plain http returns $code"
+          case "$code" in 30*) ;; *) echo "http did not redirect to https" >&2; exit 1;; esac
+
+      - name: Authentication is live through the proxy
+        run: |
+          set -euo pipefail
+          code="$(curl -s -o /dev/null -w '%{http_code}' -k -X POST https://localhost/api/v1/scans \
+            -H 'Content-Type: application/json' -d '{"url":"https://github.com/psf/requests"}')"
+          echo "without a key: $code"
+          [ "$code" = "401" ] || { echo "an unauthenticated submission was not refused" >&2; exit 1; }
+
+          code="$(curl -s -o /dev/null -w '%{http_code}' -k -X POST https://localhost/api/v1/scans \
+            -H "X-API-Key: $CODESENTINEL_API_KEYS" \
+            -H 'Content-Type: application/json' -d '{"url":"ext::sh -c whoami"}')"
+          echo "hostile URL with a valid key: $code"
+          [ "$code" = "422" ] || { echo "a hostile URL was not refused" >&2; exit 1; }
+
+      - name: Metrics are not published through the proxy
+        # Unauthenticated when enabled, so the Caddyfile deliberately does not route it.
+        run: |
+          set -euo pipefail
+          body="$(curl -s -k https://localhost/metrics || true)"
+          echo "$body" | head -3
+          echo "$body" | grep -q "codesentinel_build_info" && {
+            echo "the metrics surface is reachable from outside" >&2; exit 1; }
+          echo "not exposed"
+
+      - name: Logs
+        if: always()
+        run: docker compose $COMPOSE logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose $COMPOSE down -v --remove-orphans

@@ -40,6 +40,18 @@ services:
           memory: 512m
 
   api:
+    # Not published. Two replicas cannot both bind host port 8000, so the base file's
+    # mapping and this file's `replicas: 2` were mutually exclusive -- which nobody could
+    # notice, because the production overlay had never been started.
+    #
+    # `!override` rather than `ports: []`: a plain empty list appends to the base mapping
+    # instead of replacing it, which is the same trap the database port already documents.
+    #
+    # The API is still reachable. The frontend's nginx proxies /api/ to this service on
+    # the compose network, and Docker's DNS round-robins across the replicas, so the
+    # single published surface is the frontend -- or Caddy, with the TLS overlay on top.
+    # That is also the topology the same-origin design already assumes.
+    ports: !override []
     environment:
       CODESENTINEL_ENVIRONMENT: production
       CODESENTINEL_LOG_LEVEL: INFO

@@ -109,18 +109,27 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api \
 
 ## 5. Verify
 
+In production the API publishes no port of its own — two replicas cannot share one — so
+these go through the frontend, which proxies `/api/` and `/health` on the compose network.
+With the TLS overlay, use `https://$CODESENTINEL_DOMAIN` instead of `http://localhost:5173`.
+
 ```bash
+BASE=http://localhost:5173   # or https://$CODESENTINEL_DOMAIN with the TLS overlay
+
 # Readiness: reports unhealthy while any dependency is down, by design.
-curl -fsS http://localhost:8000/health/ready
+curl -fsS "$BASE/health/ready"
 
 # Authentication is live — this must return 401.
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8000/api/v1/scans \
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "$BASE/api/v1/scans" \
   -H 'Content-Type: application/json' -d '{"url":"https://github.com/psf/requests"}'
 
 # With a key, a hostile URL must still be refused with 422.
-curl -s -X POST http://localhost:8000/api/v1/scans \
+curl -s -X POST "$BASE/api/v1/scans" \
   -H "X-API-Key: $YOUR_KEY" -H 'Content-Type: application/json' \
   -d '{"url":"ext::sh -c whoami"}'
+
+# The database and Redis must not be reachable from the host at all.
+! timeout 2 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/5432' && echo "postgres closed"
 ```
 
 If the second command returns anything but `401`, stop and check that
