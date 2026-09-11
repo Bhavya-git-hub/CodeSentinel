@@ -28,15 +28,36 @@ keeps its own scope; this record covers all four because they shipped together.
 
 ## Acceptance
 
-**PENDING — no CI run for this work yet.**
+All green in CI run **34597351323**: **283 passed, 0 skipped, 0 failed**, across all four
+jobs. `CODESENTINEL_REQUIRE_INTEGRATION=1` is set, so zero skips means every integration
+test executed against real PostgreSQL and a real Docker daemon — including, for the first
+time, Pylint, Bandit and coverage running inside the built analysis image.
 
-Locally: **227 passed, 56 skipped**; ruff, ruff format, mypy strict all pass.
+Locally: 227 passed, 56 skipped (no Docker, no PostgreSQL on this machine).
 
-The 56 skips are the usual: no PostgreSQL and no Docker on this machine. That matters
-more here than in earlier phases, because **none of the new analysers has ever been
-executed**. Pylint, Bandit and coverage have unit-tested adapters and untested
-invocations; the integration tests that would run them against the real image are among
-the skipped. CI is the acceptance authority and has not yet been asked.
+### The defect CI caught
+
+**Coverage could never have run.** It drives the target's suite with
+`coverage run -m pytest`, and pytest was not in the analysis image — only pylint, bandit,
+semgrep, radon and coverage were. That command failed with `ModuleNotFoundError` for every
+target, always.
+
+What makes it the worst kind of bug is the error it produced: *"the sandbox has no
+network, so the target's dependencies were not installed"*. That reason is true of many
+repositories and entirely plausible, so a reader would have concluded the offline
+constraint was biting while the real limit — a missing test runner — stayed invisible
+behind a correct-sounding explanation. An analyser that fails for a reason nobody
+questions is worse than one that fails loudly.
+
+pytest is now pinned in the image and listed in the version manifest, because coverage's
+result depends on the runner as much as on coverage itself (C5).
+
+The failing test had asserted a full ingestion run reaches `SUCCEEDED`. It now reaches
+`PARTIAL` correctly, since coverage genuinely cannot run against a two-file fixture with
+no installable dependencies. The assertion was relaxed to "terminal, not FAILED" — which
+is what that test is actually about — and tightened in the same edit: a `PARTIAL` scan
+must now carry a recorded reason, so the relaxation cannot hide an analyser failing
+silently.
 
 ## The decisions worth re-reading
 
