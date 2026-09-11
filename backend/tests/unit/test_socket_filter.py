@@ -8,6 +8,8 @@ a reason naming what was wrong.
 from __future__ import annotations
 
 import copy
+import socket as socketlib
+from pathlib import Path
 
 import pytest
 
@@ -196,3 +198,50 @@ def test_a_query_string_does_not_defeat_route_matching() -> None:
 def test_an_api_version_prefix_does_not_defeat_route_matching() -> None:
     """The SDK prefixes /v1.45; a filter matching only bare paths would miss every call."""
     assert validate("POST", "/v1.45/build", None).allowed is False
+
+
+# ---------------------------------------------------------------------------
+# The proxy's start-up guard
+#
+# The first real `docker compose up` had the proxy start cleanly and return 500 to every
+# request, because it runs unprivileged and the socket is root:docker 660. Nothing
+# downstream could name the cause: the worker reported "the sandbox was unavailable", the
+# pipeline recorded PARTIAL with that reason, and the report said every file was
+# unmeasured -- all correct, none of it pointing at a group id.
+# ---------------------------------------------------------------------------
+
+
+def test_a_missing_socket_refuses_to_start(tmp_path: Path) -> None:
+    """Starting anyway produces a proxy that answers requests and cannot do its job."""
+    from app.proxy import SocketUnreachableError, assert_socket_reachable
+
+    with pytest.raises(SocketUnreachableError) as excinfo:
+        assert_socket_reachable(str(tmp_path / "absent.sock"))
+
+    assert "does not exist" in str(excinfo.value)
+    # The message has to tell an operator what to do, not merely that something is wrong.
+    assert "bind-mount" in str(excinfo.value).lower()
+
+
+@pytest.mark.skipif(
+    not hasattr(socketlib, "AF_UNIX"),
+    reason=(
+        "this Python has no AF_UNIX, so a unix-socket connection cannot be attempted. "
+        "The refusal message an operator would actually read went unverified here; CI "
+        "runs it on Linux."
+    ),
+)
+def test_an_unconnectable_socket_refuses_to_start(tmp_path: Path) -> None:
+    """A path that exists but is not a live socket is the shape a bad mount produces."""
+    from app.proxy import SocketUnreachableError, assert_socket_reachable
+
+    impostor = tmp_path / "not-a-socket"
+    impostor.write_text("")
+
+    with pytest.raises(SocketUnreachableError) as excinfo:
+        assert_socket_reachable(str(impostor))
+
+    message = str(excinfo.value)
+    assert "Cannot connect" in message
+    # group_add is the fix that is easy to miss and hard to guess from errno 13.
+    assert "group_add" in message

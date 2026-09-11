@@ -122,6 +122,21 @@ services:
       - "2375"
     environment:
       CODESENTINEL_ENVIRONMENT: local
+    # The socket is root:docker mode 660, and this image runs as uid 10001. Without
+    # membership of that group the proxy starts cleanly and returns 500 to every request
+    # for the life of the deployment -- which is exactly what the first real
+    # `docker compose up` did. It now refuses to start instead, so a wrong gid here is a
+    # container that will not boot rather than a stack that looks up and analyses nothing.
+    #
+    # group_add rather than `user: root`: this is the one process holding the daemon, and
+    # group membership is the least privilege that lets it read the socket. The gid is not
+    # portable between hosts -- read it with:
+    #
+    #     stat -c '%g' /var/run/docker.sock
+    #
+    # 999 is the common Debian/Ubuntu value and is a starting guess, not a safe default.
+    group_add:
+      - "${CODESENTINEL_DOCKER_GID:-999}"
     volumes:
       # The only mount of the socket anywhere in this stack.
       - /var/run/docker.sock:/var/run/docker.sock

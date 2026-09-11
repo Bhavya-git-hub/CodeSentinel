@@ -12,6 +12,11 @@ read the filter, not this.
 from __future__ import annotations
 
 import json
+import os
+import socket as socketlib
+import stat
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
@@ -106,17 +111,102 @@ async def forward(request: Request) -> Response:
     )
 
 
+class SocketUnreachableError(RuntimeError):
+    """Raised at start-up when the proxy cannot open the Docker socket.
+
+    Deliberately fatal, and the reason is the first real ``docker compose up``: the proxy
+    runs unprivileged, ``/var/run/docker.sock`` is ``root:docker`` mode 660, and nothing
+    put this process in that group -- so it started cleanly, reported itself up, and
+    returned 500 to every request for the life of the deployment.
+
+    Nothing downstream could say so either. The worker translated the 500 into "the
+    sandbox was unavailable", the pipeline recorded PARTIAL with that reason, and the
+    report said every file was unmeasured -- all of it correct, none of it pointing at a
+    group id. A component that answers requests while being unable to do its only job is
+    the exact shape this project refuses elsewhere (ADR 0016), and it is refused here for
+    the same reason: a deployment that does not start gets investigated.
+    """
+
+
+def assert_socket_reachable(path: str = DOCKER_SOCKET) -> None:
+    """Fail loudly at boot if the Docker socket is missing or not usable by this process.
+
+    Connects rather than calling ``os.access``: access(2) answers about the file's mode
+    bits, and a socket can be readable-looking and still refuse a connection. The only
+    honest test of "can I talk to the daemon" is to talk to it.
+    """
+    if not os.path.exists(path):
+        raise SocketUnreachableError(
+            f"{path} does not exist. The proxy is the only component that may hold the "
+            f"Docker socket, so it must be bind-mounted into this container."
+        )
+
+    # AF_UNIX, getuid and getgroups are POSIX-only, and this module only ever runs in a
+    # Linux container -- but mypy also type-checks it on a Windows development machine,
+    # where those attributes do not exist. Reached through getattr so the platform check
+    # stays a runtime fact rather than becoming a type error on the wrong OS.
+    af_unix = getattr(socketlib, "AF_UNIX", None)
+    if af_unix is None:  # pragma: no cover - the proxy is deployed only on Linux
+        raise SocketUnreachableError(
+            "This platform has no AF_UNIX support, so the Docker socket cannot be "
+            "reached. The proxy is a Linux container; it is not runnable here."
+        )
+
+    probe = socketlib.socket(af_unix, socketlib.SOCK_STREAM)
+    try:
+        probe.connect(path)
+    except OSError as exc:
+        mode = ""
+        try:
+            info = os.stat(path)
+            uid = getattr(os, "getuid", lambda: "unknown")()
+            groups: list[int] = getattr(os, "getgroups", list)()
+            mode = (
+                f" It is owned by uid {info.st_uid} gid {info.st_gid} with mode "
+                f"{stat.filemode(info.st_mode)}; this process runs as uid {uid} "
+                f"in groups {sorted(groups)}."
+            )
+        except OSError:
+            # The stat is a courtesy for the operator; its failure must not replace the
+            # connection error, which is the thing that actually went wrong.
+            pass
+        raise SocketUnreachableError(
+            f"Cannot connect to the Docker socket at {path}: {exc}.{mode} On Docker this "
+            f"is usually the socket's group: add the host's docker gid to the proxy "
+            f"service with group_add, which is the least privilege that works -- running "
+            f"this container as root would also work and gives uid 0 to the one process "
+            f"that holds the daemon."
+        ) from exc
+    finally:
+        probe.close()
+
+
+@asynccontextmanager
+async def _lifespan(_app: Starlette) -> AsyncIterator[None]:
+    """Check the socket when the server starts, not when the module is imported.
+
+    In the lifespan rather than in ``create_proxy`` because ``app`` is built at module
+    scope: doing it there would make importing this module require a live Docker socket,
+    which breaks every test and every type check on a machine that has none. Uvicorn
+    treats an exception here as a failed start-up and exits, so the container does not
+    come up -- which is the behaviour wanted, without making import mean start.
+    """
+    assert_socket_reachable()
+    logger.info("socket_proxy.start", socket=DOCKER_SOCKET)
+    yield
+
+
 def create_proxy() -> Starlette:
     configure_logging(get_settings())
-    logger.info("socket_proxy.start", socket=DOCKER_SOCKET)
     return Starlette(
+        lifespan=_lifespan,
         routes=[
             Route(
                 "/{path:path}",
                 forward,
                 methods=["GET", "POST", "DELETE", "HEAD", "PUT"],
             )
-        ]
+        ],
     )
 
 
