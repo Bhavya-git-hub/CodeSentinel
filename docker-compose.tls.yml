@@ -44,6 +44,10 @@ services:
     environment:
       CODESENTINEL_DOMAIN: ${CODESENTINEL_DOMAIN:?set the hostname this is served on}
       CODESENTINEL_ACME_EMAIL: ${CODESENTINEL_ACME_EMAIL:?set an address for certificate expiry warnings}
+      # Defaults to Let's Encrypt production. Set it to the staging directory for a first
+      # deploy -- production allows five failed authorisations per hostname per hour, and
+      # a DNS record that is not quite right burns them in two restarts. See the Caddyfile.
+      CODESENTINEL_ACME_CA: ${CODESENTINEL_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       # Issued certificates and the ACME account key. Losing this volume is not fatal --

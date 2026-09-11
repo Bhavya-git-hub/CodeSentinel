@@ -170,6 +170,27 @@ one target's analysis container read every other target's clone. These are arbit
 repositories chosen by callers, analysed side by side; ADR 0009 does not trade isolation
 for convenience.
 
+### And the overlays had a defect of their own
+
+Running `docker-compose.prod.yml` for the first time found one before it even started. It
+sets `replicas: 2` on the API while inheriting the base file's `8000:8000` mapping, and
+two replicas cannot both bind one host port. Those two settings had contradicted each
+other since the overlay was written, in the file an operator is told to deploy with.
+Nothing caught it because `docker compose config` parses a file; it does not start one.
+
+The API is now unpublished in production, reachable through the frontend's nginx proxy on
+the compose network with Docker DNS round-robining across the replicas. That makes the
+same-origin proxy load-bearing in production rather than a development convenience, and
+leaves exactly one public surface — the frontend, or Caddy with the TLS overlay on top.
+
+The job that found it asserts the things only a running stack shows: that both replicas of
+each service are actually up and beat is alone, that 5432, 6379, 8000 and 5173 are closed
+**by connecting to them** rather than by reading the rendered config, that plain HTTP
+redirects and HTTPS serves the app, that an unauthenticated submission gets 401 and a
+hostile URL gets 422 through the proxy, and that `/metrics` is not routed. It also proves
+the stack refuses to start with no credentials, against a real `up` rather than against
+`config`, because starting is the thing that must not happen.
+
 ### The smoke test got it wrong twice, in both directions
 
 Worth recording, because the two mistakes are the subject of this whole project.
@@ -269,10 +290,16 @@ every such scroller itself within the page bounds. The wide tables on `/scans` a
 
 - ~~CI must confirm retention.~~ **Done** — run 34616216187, zero skips. Pruning is
   demonstrated to reclaim the repository-scoped tables against a real PostgreSQL.
-- ~~The stack has still never been run.~~ **The base stack now runs in CI on every push**
-  (run 34621847390). The production and TLS overlays are still only validated, never
-  started: two API replicas, two workers, the `!override` port removals and ACME issuance
-  remain unexercised, and ACME cannot be exercised anywhere without a real hostname.
+- ~~The stack has still never been run.~~ **All three compose files now run in CI on every
+  push.** The base stack scans a real repository end to end (run 34621847390); the
+  production and TLS overlays come up together with both API replicas, both workers and a
+  single beat, every published port closed, TLS terminated and authentication live through
+  the proxy (run 34622769908).
+- **Public ACME issuance is the only thing left that has never run.** CI uses `localhost`,
+  for which Caddy issues from its internal CA and never contacts an ACME server, so the
+  issuance path first executes on a real deployment. `CODESENTINEL_ACME_CA` now exists so
+  that first execution can be against Let's Encrypt staging rather than against the
+  production rate limit.
 - **Stuck scans have no owner.** The pruner deliberately will not collect a RUNNING scan,
   and nothing else does either. The pipeline no longer *creates* them -- an unexpected
   exception now records FAILED with its reason -- but a worker killed mid-scan still leaves

@@ -6,6 +6,24 @@
 
 {
 	email {$CODESENTINEL_ACME_EMAIL}
+
+	# Which ACME server issues the certificate. Defaults to Let's Encrypt production,
+	# which is what it would use anyway -- it is named here so it can be changed.
+	#
+	# Point it at the staging directory for a first deploy:
+	#
+	#   CODESENTINEL_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+	#
+	# Staging issues an untrusted certificate, so browsers will warn -- and it has vastly
+	# looser rate limits. Production allows five failed authorisations per account, per
+	# hostname, per hour, and a DNS record that is not quite right burns all five in a
+	# couple of restarts. That lockout lasts an hour and arrives exactly when someone is
+	# trying to fix it.
+	#
+	# CI cannot exercise this at all: an ACME server has to reach the host by a name that
+	# resolves to it, and no runner has one. It is the last part of this deployment that
+	# nothing has ever executed, which is the reason for the escape hatch.
+	acme_ca {$CODESENTINEL_ACME_CA:https://acme-v02.api.letsencrypt.org/directory}
 }
 
 {$CODESENTINEL_DOMAIN} {

@@ -12,10 +12,14 @@ does not exist.
 
 from __future__ import annotations
 
+import contextlib
+import os
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 from celery import Celery
+from celery.signals import worker_init
 
 from app.config import Settings, get_settings
 
@@ -66,6 +70,56 @@ def beat_schedule(settings: Settings) -> dict[str, Any]:
             "options": {"expires": settings.retention_interval_hours * 3600},
         }
     }
+
+
+class CloneRootUnusableError(RuntimeError):
+    """Raised at worker start-up when the clone root cannot be written to.
+
+    Deliberately fatal, and the reason is the first real deployment: the clone directory
+    came up owned by root while the worker runs as uid 10001, so every scan died on
+    mkdtemp. The pipeline now records that as a FAILED scan with its reason, which is
+    correct and is still too late -- the operator finds out one scan at a time, from the
+    API, for a mistake that was already true before any work was accepted.
+
+    A bind-mounted directory cannot inherit ownership from the image, so nothing in the
+    build can fix this and nothing in compose can check it. A worker that refuses to
+    start is the only place the check can live where it is cheap and unmissable.
+    """
+
+
+@worker_init.connect
+def check_clone_root(**_kwargs: Any) -> None:
+    """Prove the worker can actually write where clones go, before it takes any work.
+
+    Writes a probe file rather than calling ``os.access``: access(2) answers about mode
+    bits, and this path is routinely a bind mount whose real behaviour depends on
+    ownership the image cannot set. The only honest test of "can I write here" is to
+    write.
+
+    Registered in this module rather than in ``tasks``: this is the ``-A`` target, so it
+    is imported before the worker starts, whereas ``imports=`` modules are loaded later
+    and might miss the signal entirely.
+    """
+    settings = get_settings()
+    root = Path(settings.clone_root)
+    probe = root / f".codesentinel-writable-{os.getpid()}"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe.touch()
+    except OSError as exc:
+        raise CloneRootUnusableError(
+            f"The clone root {root} is not writable by the user this worker runs as: "
+            f"{exc}. Every scan would fail on the first clone. Under Docker this is a "
+            f"bind-mounted host directory, which takes the host's ownership and cannot "
+            f"inherit the image's -- create it and chown it to the image's uid before "
+            f"starting. docs/DEPLOYMENT.md step 2 has the command."
+        ) from exc
+    finally:
+        # Best effort. A probe left behind is harmless -- the pipeline creates its own
+        # subdirectory per scan and never reads this one -- and failing to remove it must
+        # not turn a successful check into a refusal to start.
+        with contextlib.suppress(OSError):
+            probe.unlink()
 
 
 celery_app = create_celery_app()

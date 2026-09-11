@@ -8,11 +8,27 @@ property of the database rather than of this code.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from app.config import Settings
 from app.services.retention import RetentionDisabledError, prune_scans
 from app.workers.celery_app import beat_schedule
+
+
+def _with_clone_root(monkeypatch: pytest.MonkeyPatch, path: str) -> None:
+    """Point the process-wide settings at this clone root, and put them back afterwards.
+
+    Through the environment rather than a constructed Settings, because check_clone_root
+    reads the cached get_settings() exactly as the worker does -- passing an object would
+    exercise a path the worker never takes. monkeypatch reverts it: a leaked
+    CODESENTINEL_CLONE_ROOT would silently redirect every later test in the process.
+    """
+    from app.config import get_settings
+
+    monkeypatch.setenv("CODESENTINEL_CLONE_ROOT", path)
+    get_settings.cache_clear()
 
 
 async def test_a_retention_of_zero_is_refused_not_treated_as_a_cutoff_of_now() -> None:
@@ -65,3 +81,64 @@ def test_retention_is_not_in_the_reproducibility_snapshot() -> None:
     """
     snapshot = Settings(retention_days=30).reproducibility_snapshot()
     assert "retention_days" not in snapshot
+
+
+# ---------------------------------------------------------------------------
+# The worker's clone-root guard
+#
+# The first real deployment had the clone directory owned by root while the worker ran
+# as uid 10001, so every scan died on the first mkdtemp. The pipeline records that as a
+# FAILED scan with its reason, which is correct and still too late: the operator finds
+# out one scan at a time, from the API, about a mistake that was already true before any
+# work was accepted.
+# ---------------------------------------------------------------------------
+
+
+def test_a_usable_clone_root_lets_the_worker_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.workers.celery_app import check_clone_root
+
+    root = tmp_path / "clones"
+    _with_clone_root(monkeypatch, str(root))
+
+    # Returns None; the assertion is that it does not raise, and that it created the
+    # directory rather than demanding one already exist.
+    check_clone_root()
+
+    assert root.is_dir()
+
+
+def test_an_unwritable_clone_root_stops_the_worker_starting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file where the directory should be: an OSError the worker must not survive.
+
+    Chosen over chmod because this suite runs on Windows too, where mode bits do not deny
+    a directory to its owner, so a permission test would pass by never failing.
+    """
+    from app.workers.celery_app import CloneRootUnusableError, check_clone_root
+
+    blocker = tmp_path / "blocked"
+    blocker.write_text("")
+    _with_clone_root(monkeypatch, str(blocker / "clones"))
+
+    with pytest.raises(CloneRootUnusableError) as excinfo:
+        check_clone_root()
+
+    message = str(excinfo.value)
+    assert str(blocker / "clones") in message, "the reason must name the path"
+    # The fix is a chown on the host, which an errno alone would never suggest.
+    assert "chown" in message
+
+
+def test_the_probe_file_is_not_left_behind(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """It would otherwise accumulate one file per worker restart, forever."""
+    from app.workers.celery_app import check_clone_root
+
+    root = tmp_path / "clones"
+    _with_clone_root(monkeypatch, str(root))
+
+    check_clone_root()
+
+    assert list(root.iterdir()) == []

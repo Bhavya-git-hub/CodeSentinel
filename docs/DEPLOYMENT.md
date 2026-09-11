@@ -66,10 +66,12 @@ sudo chown -R 10001:10001 /var/lib/codesentinel
 echo "CODESENTINEL_DOCKER_GID=$(stat -c '%g' /var/run/docker.sock)" >> .env
 ```
 
-If the gid is wrong the proxy **refuses to start**, which is deliberate: it used to start
-cleanly and return 500 to every request, and every layer above it degraded politely into
-"the sandbox was unavailable", so a whole deployment could report scans with no findings
-and nothing would name the cause.
+**Both of these are now checked at start-up rather than trusted.** If the gid is wrong the
+proxy refuses to start; if the clone directory is not writable the worker refuses to start,
+naming the path and saying to chown it. Both used to fail much later and as something else:
+the proxy returned 500 to every request while every layer above it degraded politely into
+"the sandbox was unavailable", and the worker failed one scan at a time on `mkdtemp`. A
+deployment that does not start gets investigated; one that comes up green does not.
 
 Set `CODESENTINEL_CLONE_ROOT` if you want the clones somewhere else; it is used as both
 sides of the bind mount, so the two cannot drift apart.
@@ -210,21 +212,23 @@ everything as the only safe response. See
 Stated plainly, because a deployment guide that lists only what works is the same failure
 this project spends its whole design avoiding.
 
-- **The base stack runs; the production and TLS overlays have still never been started.**
-  CI now brings up `docker-compose.yml` on every push, migrates it, and scans a real
-  repository end to end (run 34621847390 was the first to pass). What that does *not*
-  cover: two API replicas, two workers, the `!override` port removals under load, Caddy,
-  or ACME issuance — which cannot be exercised anywhere without a hostname that resolves
-  to the host. ADR 0005's deferral is discharged for the base stack only.
-- **The first deploy still has host prerequisites that nothing can check for you.** The
-  clone directory must exist and be owned by uid 10001, and `CODESENTINEL_DOCKER_GID`
-  must be the socket's real group. Both are step 2. Both were found by running the stack
-  rather than by reasoning about it, and both used to fail as something else entirely.
-- **ACME issuance has not been exercised.** The TLS overlay cannot be validated anywhere
-  without a hostname that resolves to the machine, so CI checks only that the overlay is
-  well-formed and that it unpublishes the API and frontend ports. If Caddy cannot get a
-  certificate, everything behind it is unreachable rather than degraded — check its logs
-  first, and note that a restart loop is how you reach Let's Encrypt's rate limit.
+- **Public ACME issuance has never been exercised, and it is now the only part that has
+  not been.** CI runs all three compose files on every push — the base stack end to end,
+  and the production and TLS overlays together with two API replicas, two workers, the
+  port removals checked by connecting rather than by reading config, TLS terminated, and
+  authentication live through the proxy. What it cannot do is obtain a real certificate:
+  an ACME server has to reach the host by a name that resolves to it, and no runner has
+  one. CI uses `localhost`, for which Caddy issues from its own internal CA and never
+  contacts an ACME server at all, so the issuance path itself runs for the first time on
+  your deployment.
+
+  **Use staging for the first deploy.** Set
+  `CODESENTINEL_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory`, confirm
+  a certificate is issued, then remove it. Production allows five failed authorisations
+  per hostname per hour; a DNS record that is not quite right burns all five in a couple
+  of restarts, and the lockout arrives exactly when someone is trying to fix it. If Caddy
+  cannot get a certificate, everything behind it is unreachable rather than degraded, so
+  check its logs first.
 - **No backup policy.** Retention now exists and bounds growth, but nothing here backs
   anything up, and pruning makes that more consequential rather than less. The database is
   a plain PostgreSQL volume; back it up the way you back up any other.
