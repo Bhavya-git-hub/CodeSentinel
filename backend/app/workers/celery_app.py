@@ -4,8 +4,10 @@ Constraint C2: analysis is asynchronous. A full scan takes minutes, so the API d
 a job and returns a job id immediately. There are no synchronous scan endpoints, and this
 module is the only place a long-running unit of work may be started from.
 
-Phase 1 defines only a ``ping`` task, to prove the broker round-trip end to end. The scan
-pipeline tasks arrive in phase 3.
+``ping`` proves the broker round-trip end to end. ``app.workers.tasks`` carries the scan
+pipeline entry point and is registered below, because a worker only discovers tasks in
+modules it has been told to import -- one that is never imported is a task that silently
+does not exist.
 """
 
 from __future__ import annotations
@@ -35,6 +37,9 @@ def create_celery_app() -> Celery:
         # keeps the sandbox resource limits meaningful.
         worker_prefetch_multiplier=1,
         result_expires=86_400,
+        # Without this a worker never imports app.workers.tasks, so codesentinel.run_scan
+        # is unregistered and every dispatched scan sits in the queue unreceived.
+        imports=("app.workers.tasks",),
     )
     return app
 
