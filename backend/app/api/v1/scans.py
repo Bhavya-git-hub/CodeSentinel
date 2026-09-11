@@ -7,16 +7,18 @@ typo is a worse API for no benefit.
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Header, HTTPException, Query, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.api.deps import SessionDep, SettingsDep
+from app.api.deps import RedisDep, SessionDep, SettingsDep
+from app.api.ratelimit import enforce
 from app.models.code import Dependency, File, FileMetric, Finding
 from app.models.enums import ScanStatus, Severity
 from app.models.history import Commit
@@ -44,9 +46,25 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 
 @router.post("", response_model=ScanAccepted, status_code=status.HTTP_202_ACCEPTED)
 async def submit_scan(
-    request: ScanRequest, session: SessionDep, settings: SettingsDep
+    request: ScanRequest,
+    session: SessionDep,
+    settings: SettingsDep,
+    redis: RedisDep,
+    x_api_key: str | None = Header(default=None),
 ) -> ScanAccepted:
-    """Accept a repository for analysis and dispatch the ingestion task."""
+    """Accept a repository for analysis and dispatch the ingestion task.
+
+    Rate limited per caller: a scan costs a clone, a history walk and several containers,
+    so an unbounded submitter exhausts the worker pool with individually legitimate
+    requests that nothing else in the path would refuse.
+    """
+    await enforce(
+        redis,
+        api_key=x_api_key,
+        limit=settings.scan_rate_limit_per_minute,
+        now=time.time(),
+    )
+
     try:
         url = validate_repository_url(request.url, settings=settings)
     except UnsafeRepositoryUrlError as exc:

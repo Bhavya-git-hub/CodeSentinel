@@ -350,3 +350,41 @@ def large_git_repo(git_repo: Path, git_binary: str) -> Path:
 @pytest.fixture
 def large_git_repo_url(large_git_repo: Path) -> str:
     return large_git_repo.as_uri()
+
+
+class _MemoryRedis:
+    """Enough Redis for the rate limiter, for tests that have no server.
+
+    Deliberately not a no-op: it counts, so a test that submits repeatedly still meets
+    the limit. Only the transport is faked.
+    """
+
+    def __init__(self) -> None:
+        self.counts: dict[str, int] = {}
+
+    async def incr(self, key: str) -> int:
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _rate_limiter_backend(app) -> Iterator[None]:  # type: ignore[no-untyped-def]
+    """Give every API test an in-memory rate-limit counter.
+
+    The limiter fails closed when Redis is unreachable, which is correct in production
+    and would otherwise turn every API test into a 503. The fail-closed path itself is
+    tested directly in tests/unit/test_ratelimit.py.
+    """
+    from app.api.deps import _redis
+
+    memory = _MemoryRedis()
+
+    async def _override() -> Any:
+        return memory
+
+    app.dependency_overrides[_redis] = _override
+    yield
+    app.dependency_overrides.pop(_redis, None)

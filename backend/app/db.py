@@ -67,3 +67,20 @@ def reset_engine_cache() -> None:
     """Clear cached engine and sessionmaker. Used by tests after changing settings."""
     get_engine.cache_clear()
     get_sessionmaker.cache_clear()
+
+
+@lru_cache(maxsize=1)
+def _redis_pool(url: str) -> Any:
+    """One connection pool per process, keyed by URL so tests can point elsewhere."""
+    import redis.asyncio as aioredis
+
+    return aioredis.from_url(url, decode_responses=True)
+
+
+async def get_redis(settings: Settings) -> Any:
+    """The shared Redis client.
+
+    Used for rate limiting rather than for the broker, which Celery owns. Created lazily
+    for the same reason the engine is: importing the app must not require Redis to be up.
+    """
+    return _redis_pool(str(settings.redis_url))

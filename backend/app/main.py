@@ -7,11 +7,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api import health
+from app.api.auth import api_key_dependency, assert_auth_configured
 from app.api.v1 import api_router
 from app.config import Settings, get_settings
 from app.db import get_engine
@@ -47,6 +48,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     settings = settings or get_settings()
     configure_logging(settings)
+    # Before anything else: a production instance with no keys must not come up.
+    assert_auth_configured(settings)
 
     app = FastAPI(
         title="CodeSentinel",
@@ -83,5 +86,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(health.router)
-    app.include_router(api_router, prefix=settings.api_v1_prefix)
+    # Health probes stay unauthenticated -- an orchestrator cannot present a key,
+    # and they reveal only whether dependencies are reachable.
+    app.include_router(
+        api_router,
+        prefix=settings.api_v1_prefix,
+        dependencies=[Depends(api_key_dependency(settings))],
+    )
     return app

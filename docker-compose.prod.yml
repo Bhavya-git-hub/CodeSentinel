@@ -1,0 +1,94 @@
+# Production overlay.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Everything here either removes a development convenience that is dangerous in
+# production, or adds a bound that development did not need. Read it as the diff between
+# "runs on my machine" and "runs where someone else can reach it".
+#
+# Required in the environment (see .env.production.example). The stack will not start
+# without them, which is the point -- there are no defaults for these, because a default
+# credential that works is a credential nobody changes.
+#
+#   POSTGRES_PASSWORD        database password
+#   CODESENTINEL_API_KEYS    comma-separated caller secrets; the API refuses to boot
+#                            in production without at least one
+#   CODESENTINEL_CORS_ORIGINS  the origin the frontend is served from
+
+services:
+  postgres:
+    environment:
+      # No default. `${VAR:?message}` makes compose refuse to start rather than fall
+      # back to the development password, which is published in this repository.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the environment}
+    # The database must not be reachable from outside the compose network. The
+    # development file publishes 5432 for psql; production does not.
+    ports: !override []
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+
+  redis:
+    ports: !override []
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no"]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  api:
+    environment:
+      CODESENTINEL_ENVIRONMENT: production
+      CODESENTINEL_LOG_LEVEL: INFO
+      CODESENTINEL_DATABASE_URL: postgresql+asyncpg://codesentinel:${POSTGRES_PASSWORD:?}@postgres:5432/codesentinel
+      CODESENTINEL_REDIS_URL: redis://redis:6379/0
+      CODESENTINEL_API_KEYS: ${CODESENTINEL_API_KEYS:?set CODESENTINEL_API_KEYS; the API refuses to start in production without one}
+      CODESENTINEL_CORS_ORIGINS: ${CODESENTINEL_CORS_ORIGINS:?set the origin the frontend is served from}
+      CODESENTINEL_SCAN_RATE_LIMIT_PER_MINUTE: ${CODESENTINEL_SCAN_RATE_LIMIT_PER_MINUTE:-10}
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1g
+
+  worker:
+    environment:
+      CODESENTINEL_ENVIRONMENT: production
+      CODESENTINEL_DATABASE_URL: postgresql+asyncpg://codesentinel:${POSTGRES_PASSWORD:?}@postgres:5432/codesentinel
+      CODESENTINEL_REDIS_URL: redis://redis:6379/0
+      CODESENTINEL_CLONE_ROOT: /var/lib/codesentinel/clones
+      DOCKER_HOST: tcp://docker-proxy:2375
+      # Each worker needs its own identity so reap_orphans collects only its own
+      # leftovers and never another worker's live containers (ADR 0010). Compose gives
+      # each replica a distinct hostname, which is what worker_id defaults to.
+      CODESENTINEL_ANALYSIS_ENABLED: "true"
+    restart: unless-stopped
+    deploy:
+      # Scale by raising this. Concurrency stays at 1 per worker: a scan holds a clone
+      # and several containers, so parallelism belongs at the replica level where the
+      # memory limit applies per scan rather than per worker.
+      replicas: 2
+      resources:
+        limits:
+          # A worker's own footprint plus headroom. The analysis containers it starts
+          # are bounded separately by sandbox_mem_limit and are not counted here,
+          # because the daemon runs them as siblings rather than as children.
+          memory: 1g
+
+  docker-proxy:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  frontend:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128m

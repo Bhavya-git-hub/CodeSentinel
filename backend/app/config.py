@@ -43,6 +43,15 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:5173"]
     )
 
+    # Secrets that authorise a caller. Empty is permitted only outside production;
+    # the application refuses to boot in production without at least one, because this
+    # service clones and analyses whatever a caller names and an open instance is a
+    # machine that will fetch arbitrary URLs for anyone who can reach it.
+    api_keys: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Submissions allowed per API key per minute. Cloning is expensive and a caller who
+    # can queue unboundedly can exhaust the worker pool with legitimate-looking requests.
+    scan_rate_limit_per_minute: int = Field(default=10, ge=1)
+
     # -- Persistence ----------------------------------------------------------------
     database_url: PostgresDsn = Field(
         default=PostgresDsn(
@@ -107,7 +116,7 @@ class Settings(BaseSettings):
     # so in its own result rather than looking like one that found nothing.
     analysis_enabled: bool = True
 
-    @field_validator("cors_origins", "clone_allowed_protocols", mode="before")
+    @field_validator("cors_origins", "clone_allowed_protocols", "api_keys", mode="before")
     @classmethod
     def _split_comma_separated(cls, value: Any) -> Any:
         """Accept a comma-separated string so the value can come from a .env file."""
@@ -142,6 +151,8 @@ class Settings(BaseSettings):
             "clone_timeout_seconds": self.clone_timeout_seconds,
             "clone_allowed_protocols": list(self.clone_allowed_protocols),
             "clone_size_check_interval_seconds": self.clone_size_check_interval_seconds,
+            # api_keys is deliberately absent: this snapshot is persisted with every
+            # scan row, and a secret in the database is a secret in every backup.
             "churn_half_life_days": self.churn_half_life_days,
             "analysis_enabled": self.analysis_enabled,
         }

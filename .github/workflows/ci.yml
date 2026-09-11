@@ -159,5 +159,30 @@ jobs:
       - name: Validate compose file
         run: docker compose config --quiet
 
+      - name: Validate the production overlay
+        # The overlay uses `!override` to drop published ports and `${VAR:?}` to refuse
+        # default credentials, and neither is exercised by the base file. Without this
+        # step nothing checks the file we actually tell people to deploy with -- and a
+        # Compose too old for `!override` would fail at deploy time instead of here.
+        env:
+          POSTGRES_PASSWORD: ci-validation-only
+          CODESENTINEL_API_KEYS: ci-validation-only
+          CODESENTINEL_CORS_ORIGINS: https://example.invalid
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+          # Prove the overlay actually removes the published database port rather than
+          # appending to it, which is what a plain `ports: []` would do.
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config             | python -c "import sys,yaml; d=yaml.safe_load(sys.stdin);                 p=d['services']['postgres'].get('ports') or [];                 sys.exit(0 if not p else f'postgres still publishes {p}')"
+
+      - name: Refuse to start production without credentials
+        # The failure mode this guards is a deployment that silently falls back to the
+        # development password published in this repository.
+        run: |
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet 2>/dev/null; then
+            echo "production overlay started without required credentials" >&2
+            exit 1
+          fi
+          echo "correctly refused: required variables are unset"
+
       - name: Build images
         run: docker compose build
