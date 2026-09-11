@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { RiskTable } from "../components/RiskTable";
 import { StatusPill } from "../components/Value";
 import { usePolledScan } from "../hooks/useScan";
+import { ScanTabs } from "./ScanTabs";
 import "./Pages.css";
 
 export function ScanDetailPage() {
@@ -32,6 +33,7 @@ export function ScanDetailPage() {
 
   return (
     <div className="page">
+      {id ? <ScanTabs id={id} /> : null}
       <header className="page__head">
         <div className="page__title">
           <h1>Scan</h1>

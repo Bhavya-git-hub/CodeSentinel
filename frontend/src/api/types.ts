@@ -62,5 +62,87 @@ export interface DataSource {
   submitScan(url: string): Promise<ScanAccepted>;
   getScan(id: string): Promise<ScanDetail>;
   getMetrics(id: string): Promise<RiskQueue>;
+  getFindings(id: string): Promise<FindingsPage>;
+  getImpact(id: string, path: string, depth?: number): Promise<BlastRadius>;
+  getReport(id: string): Promise<ScanReport>;
   listScans(): Promise<ScanDetail[]>;
 }
+
+export type Severity = "critical" | "major" | "minor" | "info";
+
+/** Worst first. Used for ordering and for the intensity ramp in the UI. */
+export const SEVERITY_ORDER: readonly Severity[] = ["critical", "major", "minor", "info"];
+
+export interface FindingItem {
+  analyzer: string;
+  rule_id: string;
+  severity: Severity;
+  message: string;
+  /** Null when the analyser could not attribute it to a file in the inventory. */
+  path: string | null;
+  line_start: number | null;
+  line_end: number | null;
+}
+
+export interface FindingsPage {
+  scan_id: string;
+  status: ScanStatus;
+  total: number;
+  by_severity: Partial<Record<Severity, number>>;
+  analyzer_statuses: Record<string, AnalyzerStatus>;
+  findings: FindingItem[];
+}
+
+export interface ImpactedFile {
+  path: string;
+  /** Import hops away. 1 means it imports the changed file directly. */
+  distance: number;
+  risk_score: number | null;
+}
+
+export interface BlastRadius {
+  scan_id: string;
+  path: string;
+  depth: number;
+  impacted: ImpactedFile[];
+  resolved_edges: number;
+  /** Edges the graph could not follow. The radius is a floor, not a ceiling. */
+  unresolved_edges: number;
+}
+
+export interface CommitRisk {
+  commit_sha: string;
+  defect_probability: number;
+  model_version: string;
+}
+
+export interface Limitation {
+  subject: string;
+  detail: string;
+  consequence: string;
+}
+
+export interface ScanReport {
+  scan_id: string;
+  status: ScanStatus;
+  commit_sha: string | null;
+  started_at: string;
+  completed_at: string | null;
+  file_count: number;
+  commit_count: number;
+  files_ranked: number;
+  files_unmeasured: number;
+  findings_total: number;
+  findings_by_severity: Partial<Record<Severity, number>>;
+  dependency_edges: number;
+  dependency_edges_unresolved: number;
+  coverage_measured_files: number;
+  top_risks: FileRisk[];
+  commits_labelled: number;
+  commits_defect_inducing: number;
+  top_defect_risks: CommitRisk[];
+  limitations: Limitation[];
+  config: Record<string, unknown>;
+  analyzer_statuses: Record<string, AnalyzerStatus>;
+}
+

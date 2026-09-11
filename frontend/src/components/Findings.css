@@ -1,0 +1,302 @@
+.findings,
+.impact,
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-m);
+}
+
+.findings__head,
+.impact__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+}
+
+/* Severity: one alarm hue at four intensities. Never a traffic light -- amber here
+   would sit next to the slate that means "unmeasured" and read as the same scale. */
+.sev {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.sev--critical {
+  color: var(--halt);
+  background: var(--halt-fill);
+  font-weight: 700;
+}
+
+.sev--major {
+  color: color-mix(in srgb, var(--halt) 78%, var(--mute));
+}
+
+.sev--minor {
+  color: color-mix(in srgb, var(--halt) 42%, var(--mute));
+}
+
+.sev--info {
+  color: var(--faint);
+}
+
+.sev-summary {
+  display: flex;
+  gap: var(--gap-s);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sev-summary__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+}
+
+.sev-summary__count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--step--1);
+  color: var(--bone);
+}
+
+.findings__reason,
+.impact__caveat {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--unknown);
+  display: flex;
+  gap: var(--gap-s);
+  flex-wrap: wrap;
+  max-width: none;
+}
+
+.findings__analyzer {
+  color: var(--faint);
+}
+
+.findings__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--rule);
+  border: var(--edge);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.finding {
+  background: var(--panel);
+  padding: var(--gap-s) var(--gap-m);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.finding__top {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-s);
+  flex-wrap: wrap;
+}
+
+.finding__rule {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--bone);
+}
+
+.finding__analyzer {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.finding__message {
+  margin: 0;
+  color: var(--bone);
+  max-width: 90ch;
+}
+
+.finding__where {
+  margin: 0;
+  font-size: var(--step--1);
+}
+
+.finding__line {
+  font-family: var(--font-mono);
+  color: var(--mute);
+}
+
+.finding__unattributed {
+  color: var(--unknown);
+  font-style: italic;
+}
+
+/* --- impact --- */
+
+.impact__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--rule);
+  border: var(--edge);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.impact__row {
+  background: var(--panel);
+  padding: 9px var(--gap-m);
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--gap-s);
+  align-items: center;
+}
+
+.impact__row > * {
+  min-width: 0;
+}
+
+.impact__hops {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--mute);
+  white-space: nowrap;
+}
+
+.impact__form {
+  display: flex;
+  gap: var(--gap-s);
+  flex-wrap: wrap;
+}
+
+.impact__form input {
+  flex: 1 1 340px;
+  background: var(--panel);
+  border: var(--edge);
+  border-radius: var(--radius);
+  color: var(--bone);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  padding: 9px var(--gap-s);
+}
+
+.impact__form button {
+  background: transparent;
+  color: var(--phosphor);
+  border: 1px solid var(--phosphor);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  padding: 9px 16px;
+}
+
+.impact__form button:disabled {
+  color: var(--faint);
+  border-color: var(--rule);
+  cursor: not-allowed;
+}
+
+/* --- report --- */
+
+.report__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: var(--edge);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.report__stat {
+  background: var(--panel);
+  padding: var(--gap-s) var(--gap-m);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.report__stat dt {
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.report__stat dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--step-1);
+  color: var(--phosphor);
+}
+
+.report__stat dd.is-unknown {
+  color: var(--unknown);
+}
+
+/* Limitations are content, not a footnote: a report showing only what it found reads
+   as complete, and the reader cannot tell "clean" from "not looked at". */
+.limits {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--unknown);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.limit {
+  background: var(--panel);
+  padding: var(--gap-s) var(--gap-m);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.limit__subject {
+  font-weight: 600;
+  color: var(--bone);
+}
+
+.limit__detail {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--unknown);
+  max-width: none;
+}
+
+.limit__consequence {
+  color: var(--mute);
+  font-size: var(--step--1);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--gap-m);
+  border-bottom: var(--edge);
+  margin-bottom: var(--gap-m);
+}
+
+.tabs a {
+  color: var(--mute);
+  text-decoration: none;
+  font-size: var(--step--1);
+  padding: 0 0 8px;
+  border-bottom: 2px solid transparent;
+}
+
+.tabs a:hover {
+  color: var(--bone);
+}
+
+.tabs a.active {
+  color: var(--bone);
+  border-bottom-color: var(--phosphor);
+}

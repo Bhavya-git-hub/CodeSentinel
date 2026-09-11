@@ -1,4 +1,12 @@
-import type { DataSource, RiskQueue, ScanAccepted, ScanDetail } from "./types";
+import type {
+  BlastRadius,
+  DataSource,
+  FindingsPage,
+  RiskQueue,
+  ScanAccepted,
+  ScanDetail,
+  ScanReport,
+} from "./types";
 
 const BASE = import.meta.env.VITE_CODESENTINEL_API_BASE ?? "";
 
@@ -104,6 +112,12 @@ export const liveSource: DataSource = {
     }),
   getScan: (id) => request<ScanDetail>(`/api/v1/scans/${id}`),
   getMetrics: (id) => request<RiskQueue>(`/api/v1/scans/${id}/metrics`),
+  getFindings: (id) => request<FindingsPage>(`/api/v1/scans/${id}/findings`),
+  getImpact: (id, path, depth = 3) =>
+    request<BlastRadius>(
+      `/api/v1/scans/${id}/impact?path=${encodeURIComponent(path)}&depth=${depth}`,
+    ),
+  getReport: (id) => request<ScanReport>(`/api/v1/scans/${id}/report`),
   // The API has no list endpoint yet. Returning an empty list rather than inventing
   // one keeps the dashboard honest about what it actually knows.
   listScans: () => Promise.resolve([]),

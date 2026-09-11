@@ -12,6 +12,9 @@ function failingLive(): DataSource {
     submitScan: boom,
     getScan: boom,
     getMetrics: boom,
+    getFindings: boom,
+    getImpact: boom,
+    getReport: boom,
     listScans: boom,
   };
 }
