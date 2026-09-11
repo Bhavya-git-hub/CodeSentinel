@@ -1,0 +1,85 @@
+.value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--step--1);
+}
+
+.value--measured {
+  color: var(--phosphor);
+}
+
+.value--unknown {
+  color: var(--unknown);
+  border-bottom: 1px dashed var(--unknown);
+  cursor: help;
+}
+
+.value__unit {
+  color: var(--faint);
+  margin-left: 2px;
+}
+
+.bar {
+  min-width: 96px;
+}
+
+.bar__track {
+  position: relative;
+  height: 16px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--void);
+}
+
+.bar__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--phosphor-dim), var(--phosphor));
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-xs);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.pill__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pill--pending,
+.pill--running {
+  color: var(--mute);
+}
+
+.pill--running .pill__dot {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.pill--succeeded {
+  color: var(--phosphor);
+}
+
+.pill--partial {
+  color: var(--unknown);
+}
+
+.pill--failed {
+  color: var(--halt);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}

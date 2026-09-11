@@ -1,0 +1,50 @@
+/*
+ * Single-theme by decision, not omission. Phosphor encodes measurement: the amount of
+ * green on screen is a readout of how much of a repository was actually analysed. On a
+ * light ground that signal does not survive, so there is no light variant.
+ */
+:root {
+  color-scheme: dark;
+
+  --void: #04080a;
+  --panel: #0a1014;
+  --panel-lift: #111a20;
+  --rule: #17232b;
+
+  /* Applied only to a value the system determined. Never decoration. */
+  --phosphor: #4ade80;
+  --phosphor-dim: #2a6f4a;
+  --phosphor-glow: rgba(74, 222, 128, 0.14);
+
+  /* Could not be determined. Desaturated on purpose: unknown is an absence of
+     signal, not a warning. Amber here would claim something about the file. */
+  --unknown: #6b7a8f;
+  --unknown-fill: rgba(107, 122, 143, 0.1);
+
+  --halt: #e86a5c;
+  --halt-fill: rgba(232, 106, 92, 0.12);
+
+  --bone: #e8edf0;
+  --mute: #8a97a5;
+  --faint: #566370;
+
+  --font-display: "Gabarito", "Geist", system-ui, sans-serif;
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  --step--1: 0.8125rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.625rem;
+  --step-3: 2.25rem;
+  --step-4: clamp(2.5rem, 6vw, 4rem);
+
+  --gap-xs: 6px;
+  --gap-s: 12px;
+  --gap-m: 20px;
+  --gap-l: 36px;
+  --gap-xl: 64px;
+
+  --radius: 4px;
+  --edge: 1px solid var(--rule);
+}

@@ -25,8 +25,10 @@ health endpoints, test harness, CI), phase 2 sandbox (an isolated, network-less,
 resource-bounded analysis container), phase 3 ingestion, phase 4 complexity × churn
 prioritisation.
 
-Not yet: Pylint/Bandit findings, coverage, the dependency graph, defect prediction, and
-the frontend. There is no UI — the API is the product surface today.
+A React frontend now covers the settled contract: a landing page and a risk dashboard
+where measured, genuinely zero and unknown are three visually distinct states.
+
+Not yet: Pylint/Bandit findings, coverage, the dependency graph, defect prediction.
 
 ## Development
 
@@ -40,6 +42,18 @@ py -3.11 -m venv .venv
 Tests that need PostgreSQL are marked `requires_db` and skip with an explicit reason when
 `CODESENTINEL_TEST_DATABASE_URL` is unset or unreachable. They are never silently passed,
 and SQLite is never substituted.
+
+## Frontend
+
+```
+cd frontend
+npm install
+npm run dev
+```
+
+`VITE_CODESENTINEL_DEMO=1 npm run dev` serves bundled fixtures instead of the API and
+says so on every page. It is never selected automatically: if the API is unreachable the
+UI shows the error rather than quietly substituting sample data.
 
 ## Documentation
 

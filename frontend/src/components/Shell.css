@@ -1,0 +1,66 @@
+.demo {
+  background: var(--unknown-fill);
+  border-bottom: 1px solid var(--unknown);
+  color: var(--bone);
+  font-size: var(--step--1);
+  padding: 10px var(--gap-m);
+  text-align: center;
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-m);
+  padding: var(--gap-m);
+  border-bottom: var(--edge);
+  flex-wrap: wrap;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-s);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--step-1);
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.wordmark__mark {
+  width: 9px;
+  height: 9px;
+  background: var(--phosphor);
+  box-shadow: 0 0 12px var(--phosphor-glow);
+}
+
+.nav {
+  display: flex;
+  gap: var(--gap-m);
+  font-size: var(--step--1);
+}
+
+.nav a {
+  color: var(--mute);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+}
+
+.nav a:hover {
+  color: var(--bone);
+}
+
+.nav a.active {
+  color: var(--bone);
+  border-bottom-color: var(--phosphor);
+}
+
+.footer {
+  border-top: var(--edge);
+  margin-top: var(--gap-xl);
+  padding: var(--gap-m);
+  color: var(--faint);
+  font-size: var(--step--1);
+}
