@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
+import subprocess
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any, NoReturn
@@ -243,3 +245,85 @@ def source_tree(tmp_path: Path) -> Path:
     (tmp_path / "pkg" / "__init__.py").write_text("")
     (tmp_path / "pkg" / "module.py").write_text("def f(x):\n    return x + 1\n")
     return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# Git fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def git_binary() -> str:
+    """The git executable, or skip saying what went unverified.
+
+    Ingestion is built on a real git process, so a machine without git cannot verify
+    any of it. CI sets CODESENTINEL_REQUIRE_INTEGRATION=1, which turns this into a
+    failure rather than a quiet skip.
+    """
+    git = shutil.which("git")
+    if git is None:
+        _unavailable(
+            "no git executable is on PATH, so cloning and history mining were NOT "
+            "verified. Phase 3 cannot be demonstrated without one."
+        )
+    return git
+
+
+def _git(binary: str, repo: Path, *args: str) -> None:
+    """Run a git command in ``repo``, failing loudly if it does not succeed."""
+    subprocess.run(
+        [binary, *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull},
+    )
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path, git_binary: str) -> Path:
+    """A small real repository: three non-merge commits across two files.
+
+    Built with a real git process rather than a stub because the code under test parses
+    real git output; a hand-written fixture would prove only that the parser matches the
+    fixture. Author identity is pinned so history assertions do not depend on the
+    machine's git config; timestamps are left to git, so assert on ordering rather than
+    on absolute dates.
+    """
+    repo = tmp_path / "fixture-repo"
+    repo.mkdir()
+    _git(git_binary, repo, "init", "--initial-branch=main", "--quiet")
+    _git(git_binary, repo, "config", "user.email", "fixture@example.com")
+    _git(git_binary, repo, "config", "user.name", "Fixture Author")
+    _git(git_binary, repo, "config", "commit.gpgsign", "false")
+
+    pkg = repo / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+
+    (pkg / "module.py").write_text("def f(x):\n    return x + 1\n", encoding="utf-8")
+    _git(git_binary, repo, "add", "-A")
+    _git(git_binary, repo, "commit", "-m", "feat: add module", "--quiet")
+
+    (pkg / "module.py").write_text(
+        "def f(x):\n    return x + 1\n\n\ndef g(y):\n    return y * 2\n", encoding="utf-8"
+    )
+    _git(git_binary, repo, "add", "-A")
+    _git(git_binary, repo, "commit", "-m", "feat: add g", "--quiet")
+
+    tests_dir = repo / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_module.py").write_text(
+        "from pkg.module import f\n\n\ndef test_f():\n    assert f(1) == 2\n", encoding="utf-8"
+    )
+    _git(git_binary, repo, "add", "-A")
+    _git(git_binary, repo, "commit", "-m", "test: cover f", "--quiet")
+
+    return repo
+
+
+@pytest.fixture
+def git_repo_url(git_repo: Path) -> str:
+    """The fixture repository as a file:// URL, for the cloner to clone."""
+    return git_repo.as_uri()
