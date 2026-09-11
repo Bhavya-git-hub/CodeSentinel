@@ -40,27 +40,36 @@ Three rules carry it:
 
 ## Acceptance
 
-**PENDING — no CI run exists for this branch.** Acceptance must cite a run number.
+All criteria met, in CI run **34594530698**: every job green, including the new
+**Frontend** job and **Build images**, which builds the frontend Dockerfile and its nginx
+SPA config as part of `docker compose build`.
 
-Locally:
-
-| Check | Result |
+| Criterion | Evidence |
 |---|---|
-| `npm run lint` | pass |
-| `npx tsc --noEmit` (strict, `noUncheckedIndexedAccess`) | pass |
-| `npm run test -- --run` | **26 passed, 0 skipped** |
-| `npm run build` | pass |
-| Backend gate, unchanged | 162 passed, 54 skipped |
+| The data layer never falls back to fixtures | `never falls back to fixtures when the live client fails` |
+| Demo mode cannot be selected by accident | `does not treat an arbitrary value as demo mode` — `"0"`, `"false"` and `""` all select the live API |
+| Demo mode is announced whenever fixtures are the source | `announces demo mode when fixtures are the source` |
+| `null` renders as `None`, never as `0` or a blank | `renders an unknown value as None, never as zero` |
+| A genuine `0` stays distinguishable from an unknown | `distinguishes a zero from an unknown in the DOM`, `draws a measured zero as an empty track, not as hatch` |
+| An unmeasured file sorts last, never first | `sorts unknown risk last, never first`, and `keeps unknown last even when every other file scores zero` |
+| The queue states what it could not measure | `states how many files could not be ranked`, `says unknown rather than safe` |
+| An analyser's reason is surfaced, not hidden | `shows the analyser's reason rather than hiding it` |
+| An all-null ranking falls back to churn and admits it | `falls back to churn ordering when nothing could be ranked, and says so` |
+| The API's refusal reaches the reader verbatim | `shows the API's own refusal verbatim` — asserts the "Allowed transports" half survives |
+| The fixtures do not flatter themselves | `carry a genuinely unknown complexity rather than a flattering number` |
 
-**Verified visually:** the landing page and the scan detail page were loaded in Chrome
-against the dev server in demo mode and read as intended — the hero queue, the phosphor
-figures, the slate `None` tokens, and the caveat naming 44 of 44 files unranked.
+Locally: **26 passed, 0 skipped**; lint, strict `tsc` and `build` all pass. The backend
+gate is unchanged at 162 passed, 54 skipped.
 
-**NOT verified:** the 400px layout. The browser's renderer stopped responding after a
-window resize and two subsequent tool calls timed out, so the phone-width check did not
-complete. The CSS carries a media query and `overflow-x: auto` on both wide tables, and
-grid children are pinned to `min-width: 0`, but none of that has been seen working. It is
-the first thing to check by hand.
+**Verified visually:** the landing page and scan detail page were loaded in Chrome against
+the dev server in demo mode and read as intended — the hero queue, the phosphor figures,
+the slate `None` tokens, and the caveat naming 44 of 44 files unranked.
+
+**NOT verified:** the 400px layout. Chrome's renderer stopped responding after a window
+resize and two subsequent tool calls timed out, so the phone-width check did not complete.
+The CSS carries a media query, `overflow-x: auto` on both wide tables, and `min-width: 0`
+on grid children, but none of that has been seen working. It is the first thing to check
+by hand.
 
 ## Design decisions worth re-reading
 
