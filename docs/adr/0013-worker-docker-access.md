@@ -36,6 +36,12 @@ and refuses everything else -- privileged flags, host bind mounts, image builds.
 proxy, not the worker, is the component that holds the dangerous capability, and it is
 small enough to audit.
 
+> **Corrected by [ADR 0015](0015-socket-proxy-filters-endpoints-not-bodies.md).** The
+> "privileged flags, host bind mounts" half of that sentence is wrong: an endpoint proxy
+> does not parse request bodies, and those fields live inside a permitted
+> `POST /containers/create`. What the proxy actually stops, and what it does not, is set
+> out there.
+
 Rejected alternatives:
 
 - **Direct socket mount.** Simplest, and hands host root to the component that processes

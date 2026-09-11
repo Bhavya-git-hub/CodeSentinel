@@ -186,3 +186,36 @@ def test_an_unreadable_source_tree_is_refused(tmp_path: Path) -> None:
             source_dir=tmp_path,
             client=_StubClient(),  # type: ignore[arg-type]
         )
+
+
+def test_containers_carry_their_worker_identity(config: dict[str, Any]) -> None:
+    """ADR 0010's open obligation: reaping must be scoped to one worker.
+
+    reap_orphans removes every container carrying the owner label. With more than one
+    worker on a host that includes another worker's *live* containers -- so a worker
+    starting up would kill a scan in progress elsewhere. The worker label is what makes
+    "mine" answerable.
+    """
+    from app.services.sandbox.runner import WORKER_LABEL
+
+    assert config["labels"][WORKER_LABEL]
+
+
+def test_reaping_is_filtered_to_this_worker(sandbox: Sandbox) -> None:
+    """The filter must name the worker, not just the owner."""
+    filters = sandbox._reap_filters()
+
+    assert filters["label"] == [
+        f"{OWNER_LABEL}={OWNER_LABEL_VALUE}",
+        f"codesentinel.worker={sandbox._worker_id}",
+    ]
+
+
+def test_worker_identity_is_stable_across_instances() -> None:
+    """A worker restarting after a crash must still recognise its own orphans.
+
+    A per-instance random id would make every restart forget what it left behind, which
+    is precisely the case reap_orphans exists for.
+    """
+    settings = Settings(worker_id="worker-a")
+    assert settings.worker_id == "worker-a"

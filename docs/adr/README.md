@@ -19,3 +19,4 @@ Format: context, decision, consequences. Numbered sequentially, never renumbered
 | [0012](0012-worker-event-loop-per-task.md) | Workers run an async body per task under `asyncio.run`, with `NullPool` |
 | [0013](0013-worker-docker-access.md) | The phase 3 worker gets no Docker access; a filtering socket proxy is chosen for phase 5 |
 | [0014](0014-analysers-run-in-the-sandbox.md) | Analysers run in the sandbox without per-tool exemption; the Docker requirement arrives in phase 4 |
+| [0015](0015-socket-proxy-filters-endpoints-not-bodies.md) | The socket proxy filters endpoints, not request bodies; body-level filtering remains owed |

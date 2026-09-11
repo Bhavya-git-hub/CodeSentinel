@@ -11,6 +11,7 @@ for the same reason -- they are part of the reproducibility record, not incident
 
 from __future__ import annotations
 
+import socket
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
@@ -69,6 +70,11 @@ class Settings(BaseSettings):
     sandbox_timeout_seconds: int = Field(default=600, ge=1)
     sandbox_max_output_bytes: int = Field(default=10 * 1024 * 1024, ge=1024)
     sandbox_tmpfs_size_bytes: int = Field(default=512 * 1024 * 1024, ge=1024)
+    # Identifies which worker owns a container, so reap_orphans can remove its own
+    # leftovers without touching another worker's live ones (ADR 0010). Defaults to the
+    # hostname because it must survive a restart: a per-process random id would make a
+    # crashed worker forget exactly the containers reaping exists to collect.
+    worker_id: str = Field(default_factory=socket.gethostname)
 
     # -- Ingestion (phase 3) --------------------------------------------------------
     # Clones are full, never shallow: phase 4 history mining and phase 8 SZZ both need

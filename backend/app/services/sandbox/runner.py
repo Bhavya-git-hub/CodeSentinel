@@ -61,6 +61,9 @@ SANDBOX_GID = 10001
 OWNER_LABEL = "codesentinel.owner"
 OWNER_LABEL_VALUE = "codesentinel"
 RUN_ID_LABEL = "codesentinel.run_id"
+#: Which worker owns the container. Reaping is scoped to this, because a host can
+#: run several workers and one starting up must not kill another's live scan.
+WORKER_LABEL = "codesentinel.worker"
 
 
 class Sandbox:
@@ -87,6 +90,7 @@ class Sandbox:
         self._settings = settings
         self._source_dir = source_dir.resolve()
         self._run_id = run_id or uuid.uuid4().hex
+        self._worker_id = settings.worker_id
         self._owns_client = client is None
         self._client = client or self._connect(settings)
 
@@ -215,18 +219,36 @@ class Sandbox:
         )
         return result
 
+    def _reap_filters(self) -> dict[str, list[str]]:
+        """Docker filters selecting only this worker's containers.
+
+        Both labels, not just the owner. ADR 0010 left this open and phase 5 cannot ship
+        without it: with two workers on one host, filtering on the owner alone selects
+        the other worker's *running* containers, and a worker starting up would destroy
+        a scan in progress elsewhere. That failure is invisible -- the victim scan simply
+        reports that its analyser died.
+        """
+        return {
+            "label": [
+                f"{OWNER_LABEL}={OWNER_LABEL_VALUE}",
+                f"{WORKER_LABEL}={self._worker_id}",
+            ]
+        }
+
     def reap_orphans(self) -> int:
-        """Remove any leftover CodeSentinel containers and report how many.
+        """Remove this worker's leftover containers and report how many.
 
         A container is normally removed by :meth:`run`'s ``finally``. That cannot cover a
         worker killed by SIGKILL or a host reboot mid-run, so this exists to be called at
         worker start-up. Returning the count means an accumulating leak is visible rather
         than silently cleaned up forever.
+
+        Scoped to this worker's own identity, which is why ``worker_id`` defaults to the
+        hostname rather than to something fresh per process: a restarted worker has to
+        recognise what its previous incarnation left behind.
         """
         reaped = 0
-        for container in self._client.containers.list(
-            all=True, filters={"label": f"{OWNER_LABEL}={OWNER_LABEL_VALUE}"}
-        ):
+        for container in self._client.containers.list(all=True, filters=self._reap_filters()):
             try:
                 container.remove(force=True)
             except (APIError, NotFound) as exc:
@@ -287,7 +309,11 @@ class Sandbox:
             "command": list(command),
             "detach": True,
             "name": f"codesentinel-{self._run_id}-{uuid.uuid4().hex[:8]}",
-            "labels": {OWNER_LABEL: OWNER_LABEL_VALUE, RUN_ID_LABEL: self._run_id},
+            "labels": {
+                OWNER_LABEL: OWNER_LABEL_VALUE,
+                RUN_ID_LABEL: self._run_id,
+                WORKER_LABEL: self._worker_id,
+            },
             # No network at all. Stops exfiltration of anything the container can read and
             # stops a malicious target pulling a second stage.
             "network_mode": "none",
