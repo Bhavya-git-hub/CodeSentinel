@@ -267,7 +267,10 @@ jobs:
         # parse error rather than as "the API is not reachable".
         run: |
           set -euo pipefail
-          curl -fsS http://localhost:5173/ | grep -qi "<title>" || { echo "SPA did not serve"; exit 1; }
+          # Captured, then matched. `curl | grep -q` under pipefail fails when grep exits
+          # first and SIGPIPEs curl -- a failure caused by the assertion passing early.
+          spa="$(curl -fsS http://localhost:5173/)"
+          case "$spa" in *"<title>"*) ;; *) echo "SPA did not serve" >&2; exit 1 ;; esac
           listing="$(curl -fsS http://localhost:5173/api/v1/scans)"
           echo "$listing"
           echo "$listing" | python -c "import sys,json; d=json.load(sys.stdin);             assert 'scans' in d and 'total' in d, d"
@@ -410,15 +413,28 @@ jobs:
         # like one that passed. The proxy's is proved by the stack being up at all -- it
         # exits if it cannot open the socket. The worker's announces itself, and this is
         # the only thing that distinguishes "checked and fine" from "never wired".
+        #
+        # Matched with `case`, not `grep -q` in a pipeline. Under `set -o pipefail`,
+        # `grep -q` exits the moment it matches, the writer upstream takes SIGPIPE, and
+        # the pipeline reports failure *because the assertion succeeded early*. It is
+        # timing-dependent -- it passed twice before failing on a run where the proxy had
+        # logged the line thirteen seconds earlier -- which is the worst kind of CI flake:
+        # one that fires on a healthy system and teaches people to re-run the job.
         run: |
           set -euo pipefail
-          logs="$(docker compose $COMPOSE logs --no-color worker)"
-          echo "$logs" | grep -c "worker.clone_root_writable" \
-            || { echo "no worker verified its clone root at start-up" >&2; exit 1; }
-          echo "$logs" | grep "worker.clone_root_writable" | head -2
-          docker compose $COMPOSE logs --no-color docker-proxy | grep -q "socket_proxy.start" \
-            || { echo "the proxy never reported a usable socket" >&2; exit 1; }
-          echo "proxy reported a usable socket"
+          worker_logs="$(docker compose $COMPOSE logs --no-color worker)"
+          case "$worker_logs" in
+            *worker.clone_root_writable*)
+              printf '%s\n' "$worker_logs" | grep "worker.clone_root_writable" | head -2 ;;
+            *)
+              echo "no worker verified its clone root at start-up" >&2; exit 1 ;;
+          esac
+
+          proxy_logs="$(docker compose $COMPOSE logs --no-color docker-proxy)"
+          case "$proxy_logs" in
+            *socket_proxy.start*) echo "proxy reported a usable socket" ;;
+            *) echo "the proxy never reported a usable socket" >&2; exit 1 ;;
+          esac
 
       - name: Both API and worker replicas are actually running
         # `replicas: 2` and a published port are mutually exclusive, and nothing caught
@@ -458,7 +474,8 @@ jobs:
           # -k: the certificate is from Caddy's internal CA, which this runner does not
           # trust. What is being checked is that TLS is terminated and routed, not that a
           # public CA signed it -- that part remains unexercised and is said so plainly.
-          curl -fsS -k https://localhost/ | grep -qi "<title>"
+          spa="$(curl -fsS -k https://localhost/)"
+          case "$spa" in *"<title>"*) ;; *) echo "https did not serve the SPA" >&2; exit 1 ;; esac
           echo "https serves the SPA"
           code="$(curl -s -o /dev/null -w '%{http_code}' -k http://localhost/)"
           echo "plain http returns $code"
@@ -483,10 +500,12 @@ jobs:
         run: |
           set -euo pipefail
           body="$(curl -s -k https://localhost/metrics || true)"
-          echo "$body" | head -3
-          echo "$body" | grep -q "codesentinel_build_info" && {
-            echo "the metrics surface is reachable from outside" >&2; exit 1; }
-          echo "not exposed"
+          printf '%s\n' "$body" | head -3
+          case "$body" in
+            *codesentinel_build_info*)
+              echo "the metrics surface is reachable from outside" >&2; exit 1 ;;
+            *) echo "not exposed" ;;
+          esac
 
       - name: Logs
         if: always()
