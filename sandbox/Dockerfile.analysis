@@ -21,6 +21,10 @@ ARG BANDIT_VERSION=1.9.4
 ARG SEMGREP_VERSION=1.177.0
 ARG RADON_VERSION=6.0.1
 ARG COVERAGE_VERSION=7.16.0
+# coverage drives the target's suite with `-m pytest`, so pytest has to be in the
+# image. Without it every coverage run fails with ModuleNotFoundError and the
+# analyser is structurally unable to produce a number for any target.
+ARG PYTEST_VERSION=8.4.2
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -38,7 +42,8 @@ RUN pip install --no-cache-dir \
     "bandit==${BANDIT_VERSION}" \
     "semgrep==${SEMGREP_VERSION}" \
     "radon==${RADON_VERSION}" \
-    "coverage==${COVERAGE_VERSION}"
+    "coverage==${COVERAGE_VERSION}" \
+    "pytest==${PYTEST_VERSION}"
 
 # Version manifest, generated from what was actually installed rather than from the build
 # arguments, so a resolver substitution cannot make the manifest lie. Kept in a separate

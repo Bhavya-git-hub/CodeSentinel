@@ -16,7 +16,7 @@ import platform
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
-TOOLS = ("pylint", "bandit", "semgrep", "radon", "coverage")
+TOOLS = ("pylint", "bandit", "semgrep", "radon", "coverage", "pytest")
 
 
 def main() -> int:
