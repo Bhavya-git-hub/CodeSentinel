@@ -138,3 +138,80 @@ async def test_the_clone_is_removed_whatever_happens(
     await run_ingestion(db_session, scan.id, settings=ingest_settings)
 
     assert list(clone_root.iterdir()) == [], "the clone must not outlive the scan"
+
+
+async def test_an_unusable_clone_root_is_recorded_not_left_running(
+    db_session: AsyncSession,
+    git_repo_url: str,
+    ingest_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The defect the first real `docker compose up` found.
+
+    The clones volume came up owned by root while the container runs unprivileged, so
+    mkdtemp raised PermissionError. That is not an IngestionError, so it escaped the
+    handler and left the scan in RUNNING with error NULL -- indistinguishable from a scan
+    still working, and collected by nothing, because the retention pruner skips
+    non-terminal scans deliberately.
+
+    A permission error is simulated rather than produced by chmod: the suite runs on
+    Windows too, where mode bits do not deny a directory to its owner, so a real chmod
+    would make this test silently pass by not failing.
+    """
+    import tempfile
+
+    def _denied(*_args: object, **_kwargs: object) -> str:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(tempfile, "mkdtemp", _denied)
+
+    repository = Repository(url=git_repo_url, name="a/b")
+    scan = Scan(repository_id=repository.id)
+    db_session.add_all([repository, scan])
+    await db_session.commit()
+
+    await run_ingestion(db_session, scan.id, settings=ingest_settings)
+
+    await db_session.refresh(scan)
+    assert scan.status is ScanStatus.FAILED, "the scan was left in a non-terminal state"
+    assert scan.completed_at is not None
+    assert scan.error and ingest_settings.clone_root in scan.error, (
+        "the reason must name the path, so an operator knows where to look"
+    )
+
+
+async def test_an_unexpected_error_fails_the_scan_and_is_re_raised(
+    db_session: AsyncSession,
+    git_repo_url: str,
+    ingest_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The general case of the same defect, for exceptions nobody has thought of yet.
+
+    Guarding one exception type at a time is what produced the PermissionError above: the
+    mkdir that raised it was itself added to guard against FileNotFoundError, under a
+    comment warning that anything escaping would strand the scan in RUNNING forever.
+
+    Re-raised rather than swallowed (anti-pattern #9): the scan row carries the reason for
+    the caller, and the traceback still reaches the worker log and Celery's own failure
+    reporting.
+    """
+
+    def _explode(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("an analyser did something nobody predicted")
+
+    monkeypatch.setattr("app.services.ingestion.pipeline.clone_repository", _explode)
+
+    repository = Repository(url=git_repo_url, name="a/b")
+    scan = Scan(repository_id=repository.id)
+    db_session.add_all([repository, scan])
+    await db_session.commit()
+
+    with pytest.raises(RuntimeError, match="nobody predicted"):
+        await run_ingestion(db_session, scan.id, settings=ingest_settings)
+
+    await db_session.refresh(scan)
+    assert scan.status is ScanStatus.FAILED, "the scan was left in a non-terminal state"
+    assert scan.error and "RuntimeError" in scan.error, (
+        "the reason must name what went wrong, not just that something did"
+    )

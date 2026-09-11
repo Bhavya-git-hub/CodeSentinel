@@ -37,6 +37,25 @@ RUN pip install --no-deps -e .
 # daemon. Neither belongs to uid 0.
 RUN useradd --create-home --uid 10001 appuser \
     && chown -R appuser:appuser /srv/app
+# The clone root has to exist in the IMAGE, owned by the user that will write to it.
+#
+# Docker seeds an empty named volume from whatever the image has at the mount point,
+# ownership included. Without this the `clones` volume is created root:root 755, the
+# worker runs as uid 10001, and the first scan dies with EACCES on mkdtemp -- which is
+# exactly what the first real `docker compose up` did.
+#
+# Rejected: running the worker as root, which hands uid 0 to the process holding a Docker
+# handle; and chowning from an entrypoint, which needs root at start-up for the same
+# reason. Creating it here costs one empty directory and keeps the container unprivileged.
+#
+# Caveat worth knowing: this works for named volumes only. A bind mount takes the HOST
+# directory's ownership and masks the image's, so anyone swapping `clones` for a bind
+# mount must chown the host path to 10001 themselves.
+#
+# The path is duplicated from Settings.clone_root. If that default changes, this must
+# change with it -- a mismatch is silent until a scan actually runs.
+RUN mkdir -p /var/lib/codesentinel/clones && chown -R appuser:appuser /var/lib/codesentinel
+
 USER appuser
 
 EXPOSE 8000

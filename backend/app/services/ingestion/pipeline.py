@@ -50,6 +50,30 @@ def classify_outcome(*, history_error: str | None, analysis_error: str | None = 
     return ScanStatus.PARTIAL if (history_error or analysis_error) else ScanStatus.SUCCEEDED
 
 
+async def _record_failure(
+    session: AsyncSession, scan_id: uuid.UUID, reason: str, *, event: str
+) -> None:
+    """Mark a scan FAILED with its reason, from a path where the session may be dirty.
+
+    Rolls back first. The exception may have left the transaction unusable, and a commit
+    on a poisoned transaction raises again -- losing the reason at the exact moment the
+    system is trying to record one. The scan is re-fetched rather than reused because a
+    rollback expires every object in the session, and reading an expired attribute under
+    asyncio is implicit lazy IO, which raises MissingGreenlet.
+    """
+    await session.rollback()
+    scan = await session.get(Scan, scan_id)
+    if scan is None:
+        # Nothing left to record against; the log is the only place left to say so.
+        logger.error(event, scan_id=str(scan_id), error=reason, scan_missing=True)
+        return
+    scan.status = ScanStatus.FAILED
+    scan.error = reason
+    scan.completed_at = datetime.now(UTC)
+    await session.commit()
+    logger.error(event, scan_id=str(scan_id), error=reason)
+
+
 async def run_ingestion(session: AsyncSession, scan_id: uuid.UUID, *, settings: Settings) -> None:
     """Clone, inventory and mine the repository for ``scan_id``, recording the outcome."""
     scan = await session.get(Scan, scan_id)
@@ -64,11 +88,32 @@ async def run_ingestion(session: AsyncSession, scan_id: uuid.UUID, *, settings: 
     await session.commit()
 
     # Created rather than assumed. On a fresh deployment clone_root does not exist yet,
-    # and mkdtemp would raise FileNotFoundError -- which is not an IngestionError, so it
-    # would escape the handler below and strand the scan in RUNNING forever.
+    # and mkdtemp would raise FileNotFoundError.
+    #
+    # The try is the lesson from the first real `docker compose up`. This mkdir was
+    # already here, defending against exactly one exception type, under a comment saying
+    # that anything escaping here "would strand the scan in RUNNING forever" -- and then
+    # the next line raised PermissionError, which is not FileNotFoundError and is not an
+    # IngestionError, and stranded the scan in RUNNING forever. Guarding a failure mode
+    # one exception at a time is how that keeps happening.
     clone_root = Path(settings.clone_root)
-    clone_root.mkdir(parents=True, exist_ok=True)
-    destination = Path(tempfile.mkdtemp(prefix="codesentinel-", dir=clone_root))
+    try:
+        clone_root.mkdir(parents=True, exist_ok=True)
+        destination = Path(tempfile.mkdtemp(prefix="codesentinel-", dir=clone_root))
+    except OSError as exc:
+        # Reported with the path and the likely cause rather than as errno 13. An
+        # operator reading "Permission denied" learns nothing they can act on; the
+        # ownership of the volume is the thing to go and look at.
+        await _record_failure(
+            session,
+            scan_id,
+            f"The clone root {clone_root} is not usable by the user this process runs "
+            f"as: {exc}. Under Docker this is usually a clones volume owned by root "
+            f"while the container runs unprivileged -- the image must create and own "
+            f"that directory so a named volume inherits the ownership.",
+            event="scan.clone_root_unusable",
+        )
+        return
     clone_path = destination / "repo"
 
     try:
@@ -121,6 +166,27 @@ async def run_ingestion(session: AsyncSession, scan_id: uuid.UUID, *, settings: 
         scan.completed_at = datetime.now(UTC)
         await session.commit()
         logger.warning("scan.failed", scan_id=str(scan_id), error=str(exc))
+
+    # No `noqa: BLE001` needed: ruff permits a broad catch that re-raises, which is
+    # exactly the shape this is -- record the reason, then let the exception carry on.
+    except Exception as exc:
+        # Everything the pipeline did not anticipate: a permission error, a dropped
+        # connection, a bug in an analyser. What matters is that the scan does not stay
+        # RUNNING. C3 requires a failure to carry its reason, and a row left in RUNNING
+        # carries none, is indistinguishable from a scan still working, and is collected
+        # by nothing -- the retention pruner skips non-terminal scans deliberately, so it
+        # is there until somebody deletes it by hand.
+        #
+        # Re-raised immediately after recording. The reason reaches the caller through
+        # the scan row and the traceback still reaches the worker log and Celery's own
+        # failure reporting; this records the exception, it does not swallow it.
+        await _record_failure(
+            session,
+            scan_id,
+            f"{type(exc).__name__}: {exc}",
+            event="scan.failed_unexpectedly",
+        )
+        raise
 
     finally:
         # remove_tree, not shutil.rmtree(ignore_errors=True): git leaves its objects
