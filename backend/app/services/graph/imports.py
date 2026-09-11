@@ -61,6 +61,14 @@ def module_name_for(path: str) -> str | None:
     return ".".join(parts) if parts else None
 
 
+#: Directories that hold packages without being part of their importable name. A
+#: src-layout project keeps `click` at `src/click/`, and the code imports `click.core`,
+#: never `src.click.core`. Found by the first real scan: 495 of 692 edges in
+#: pallets/click were unresolved purely because of this, which understates every blast
+#: radius in the large fraction of modern Python that uses this layout.
+SOURCE_ROOTS = ("src", "lib")
+
+
 def build_module_index(paths: list[str]) -> dict[str, str]:
     """Dotted module name -> repository path, for every importable file.
 
@@ -74,10 +82,26 @@ def build_module_index(paths: list[str]) -> dict[str, str]:
         module = module_name_for(path)
         if module is None:
             continue
-        existing = index.get(module)
-        if existing is None or len(path) < len(existing):
-            index[module] = path
+        for name in _importable_names(module):
+            existing = index.get(name)
+            if existing is None or len(path) < len(existing):
+                index[name] = path
     return index
+
+
+def _importable_names(module: str) -> list[str]:
+    """Every dotted name this module can legitimately be imported as.
+
+    Both the literal path-derived name and, for a source root, the name with that root
+    stripped. Both are registered rather than only the stripped one, because a repository
+    can genuinely contain a package called ``src`` and dropping the literal form would
+    then fail to resolve real imports of it.
+    """
+    names = [module]
+    head, _, rest = module.partition(".")
+    if head in SOURCE_ROOTS and rest:
+        names.append(rest)
+    return names
 
 
 def _resolve_relative(source_path: str, module: str | None, level: int) -> tuple[str | None, str]:

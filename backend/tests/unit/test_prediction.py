@@ -148,3 +148,45 @@ def test_unknown_size_has_no_bucket() -> None:
     assert bucket_for(None) is None
     assert bucket_for(5) == "tiny"
     assert bucket_for(10_000) == "huge"
+
+
+def test_an_all_positive_labelled_set_produces_no_predictions() -> None:
+    """Found by the first real scan, not by any test written before it.
+
+    When the blame pass truncates, nothing can be ruled out, so every label is True.
+    A frequency over an all-positive set is 1.0 for every commit -- 2,160 commits scored
+    at certainty, which is a confident number meaning nothing. MIN_LABELLED_COMMITS did
+    not catch it: there were 166 labels, all of one class.
+    """
+    commits = [
+        LabelledCommit(sha=f"{i:040x}", lines_changed=20, is_defect_inducing=True)
+        for i in range(200)
+    ]
+
+    predictions, reason = predict(commits)
+
+    assert predictions == []
+    assert reason is not None
+    assert "not that every commit is risky" in reason
+
+
+def test_an_all_negative_labelled_set_also_produces_none() -> None:
+    """The mirror failure: every commit at 0.0 reads as a clean repository."""
+    commits = [
+        LabelledCommit(sha=f"{i:040x}", lines_changed=20, is_defect_inducing=False)
+        for i in range(200)
+    ]
+    predictions, reason = predict(commits)
+    assert predictions == []
+    assert reason is not None
+
+
+def test_a_lopsided_but_two_class_history_still_models() -> None:
+    """Refusing must not become refusing everything; imbalance is normal and fine."""
+    commits = [
+        LabelledCommit(sha=f"{i:040x}", lines_changed=20, is_defect_inducing=(i < 6))
+        for i in range(200)
+    ]
+    predictions, reason = predict(commits)
+    assert reason is None
+    assert len(predictions) == 200

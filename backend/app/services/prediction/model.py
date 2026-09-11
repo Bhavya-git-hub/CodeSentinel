@@ -30,6 +30,11 @@ MODEL_VERSION = "frequency-baseline-1"
 #: handful: with fewer, a single defect swings a bucket's probability by tens of points.
 MIN_LABELLED_COMMITS = 30
 
+#: A rate needs both outcomes. Found by running a real scan: when the blame pass is
+#: truncated nothing can be ruled out, so every label is True, and a frequency over an
+#: all-positive set is 1.0 for every commit in it -- a confident number meaning nothing.
+MIN_PER_CLASS = 5
+
 #: Lines-changed boundaries. Size is the one feature that is both available for every
 #: commit and repeatedly found to correlate with defect proneness; using more features
 #: without fitting them would be inventing weights.
@@ -91,6 +96,18 @@ def predict(commits: list[LabelledCommit]) -> tuple[list[Prediction], str | None
             f"{len(labelled)} commits and at least {MIN_LABELLED_COMMITS} are needed. "
             f"No probabilities were produced. This usually means the repository's commit "
             f"messages rarely describe fixes, not that its commits are safe."
+        )
+
+    positives = sum(1 for c in labelled if c.is_defect_inducing)
+    negatives = len(labelled) - positives
+    if positives < MIN_PER_CLASS or negatives < MIN_PER_CLASS:
+        # A rate computed from one class is not a rate. All-positive gives every commit
+        # 1.0; all-negative gives every commit 0.0. Both look like findings.
+        return [], (
+            f"Defect risk could not be modelled: the labelled history has "
+            f"{positives} defect-inducing and {negatives} clean commits, and at least "
+            f"{MIN_PER_CLASS} of each are needed. This usually means the blame pass was "
+            f"truncated, so nothing could be ruled out -- not that every commit is risky."
         )
 
     totals: dict[str, int] = {}

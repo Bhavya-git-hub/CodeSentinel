@@ -142,3 +142,40 @@ def test_the_index_is_deterministic_when_two_paths_claim_one_module() -> None:
     first = build_module_index(["pkg/mod.py", "pkg/mod/__init__.py"])
     second = build_module_index(["pkg/mod/__init__.py", "pkg/mod.py"])
     assert first == second
+
+
+SRC_INDEX = build_module_index(
+    ["src/click/__init__.py", "src/click/core.py", "src/click/termui.py", "setup.py"]
+)
+
+
+def test_a_src_layout_package_resolves_under_its_importable_name() -> None:
+    """Found by the first real scan, not by any test written before it.
+
+    A src-layout project keeps `click` at `src/click/`, and its code imports
+    `click.core` -- never `src.click.core`. Indexing only the path-derived name left
+    495 of 692 edges unresolved in pallets/click, understating every blast radius in the
+    large fraction of modern Python that uses this layout.
+    """
+    edges = extract_imports("src/click/termui.py", "from click.core import Context\n", SRC_INDEX)
+
+    assert edges[0].resolved is True
+    assert edges[0].target_path == "src/click/core.py"
+
+
+def test_the_literal_path_name_still_resolves() -> None:
+    """A repository may genuinely contain a package called `src`; both forms are kept."""
+    edges = extract_imports("setup.py", "import src.click.core\n", SRC_INDEX)
+    assert edges[0].resolved is True
+
+
+def test_a_lib_layout_resolves_too() -> None:
+    index = build_module_index(["lib/pkg/__init__.py", "lib/pkg/util.py", "main.py"])
+    edges = extract_imports("main.py", "from pkg import util\n", index)
+    assert edges[0].target_path == "lib/pkg/util.py"
+
+
+def test_a_normal_layout_is_unaffected() -> None:
+    """The stripping must not change anything for repositories without a source root."""
+    edges = extract_imports("pkg/module.py", "import pkg.helpers\n", INDEX)
+    assert edges[0].target_path == "pkg/helpers.py"
