@@ -177,7 +177,11 @@ async def run_analysis(
     # SZZ runs here for the same reason everything else does: blame needs the repository
     # on disk, and the pipeline deletes the clone when the scan ends.
     szz_error = await run_szz(
-        session, scan_id=scan_id, repository_id=repository_id, clone_path=clone_path
+        session,
+        scan_id=scan_id,
+        repository_id=repository_id,
+        clone_path=clone_path,
+        settings=settings,
     )
 
     await _persist_findings(

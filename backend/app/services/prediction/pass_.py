@@ -19,6 +19,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings
 from app.models.history import Commit, Prediction
 from app.services.prediction import model as risk_model
 from app.services.prediction.blame import blame_suspects
@@ -28,11 +29,6 @@ logger = structlog.get_logger(__name__)
 
 ANALYZER_NAME = "szz"
 
-#: Blaming every fix in a long history is the slowest thing a scan does, and the marginal
-#: value of the thousandth fix is small. Bounded, and the bound is reported so a truncated
-#: pass is visible rather than silently partial.
-MAX_FIXES_BLAMED = 300
-
 
 async def run_szz(
     session: AsyncSession,
@@ -40,6 +36,7 @@ async def run_szz(
     scan_id: uuid.UUID,
     repository_id: uuid.UUID,
     clone_path: Path,
+    settings: Settings,
 ) -> str | None:
     """Label commits and write predictions. Returns a reason if incomplete.
 
@@ -76,9 +73,10 @@ async def run_szz(
     # --- blame each fix -----------------------------------------------------
     inducing: set[str] = set()
     ordered_fixes = sorted(bugfix_shas)
-    truncated = len(ordered_fixes) > MAX_FIXES_BLAMED
+    budget = settings.szz_max_fixes_blamed
+    truncated = len(ordered_fixes) > budget
 
-    for sha in ordered_fixes[:MAX_FIXES_BLAMED]:
+    for sha in ordered_fixes[:budget]:
         for suspect in blame_suspects(clone_path, sha):
             # Only commits we actually mined, and only ones older than the fix. A suspect
             # we know nothing about cannot be labelled, and one newer than the fix cannot
@@ -155,7 +153,7 @@ async def run_szz(
     reasons: list[str] = []
     if truncated:
         reasons.append(
-            f"Only the first {MAX_FIXES_BLAMED} of {len(bugfix_shas)} bug-fix commits were "
+            f"Only the first {budget} of {len(bugfix_shas)} bug-fix commits were "
             f"blamed, so commits not named as defect-inducing are recorded as unknown "
             f"rather than as clean."
         )

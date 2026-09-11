@@ -115,6 +115,17 @@ class Settings(BaseSettings):
     # failing every scan. Recorded in the snapshot so a scan that skipped analysis says
     # so in its own result rather than looking like one that found nothing.
     analysis_enabled: bool = True
+    # How many bug-fix commits the SZZ pass blames before it stops.
+    #
+    # A count, not a time budget: a time-bounded pass would label different commits on a
+    # fast machine than a slow one, and two scans of the same commit must agree (C5).
+    #
+    # The default was 300 and that silently disabled defect prediction for real projects.
+    # Truncation means no commit can be ruled out, so the labelled set is all-positive and
+    # the model correctly declines -- psf/requests has 549 fix commits and pallets/click
+    # 356, so both produced nothing. Blaming costs roughly 110ms per fix, so 2000 is about
+    # four minutes in the worst case and clears almost every repository outright.
+    szz_max_fixes_blamed: int = Field(default=2000, ge=1)
 
     @field_validator("cors_origins", "clone_allowed_protocols", "api_keys", mode="before")
     @classmethod
@@ -155,6 +166,8 @@ class Settings(BaseSettings):
             # scan row, and a secret in the database is a secret in every backup.
             "churn_half_life_days": self.churn_half_life_days,
             "analysis_enabled": self.analysis_enabled,
+            # Changes which commits are labelled, therefore every probability.
+            "szz_max_fixes_blamed": self.szz_max_fixes_blamed,
         }
 
 

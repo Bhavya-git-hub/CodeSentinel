@@ -95,3 +95,46 @@ silently.
   report as `commits_labelled`, `commits_defect_inducing` and `top_defect_risks`.
 - **The frontend covers only the risk queue.** Findings, impact and report endpoints have
   no UI.
+
+## What real scans found
+
+Three defects, none of which 300 passing tests or eight green CI runs could reach,
+because every test fixture is a repository of three to five commits.
+
+**pallets/click** — 2,162 commits, 177 files, 26s.
+
+1. **The model scored 2,160 commits at `1.000`.** A truncated blame pass rules nothing
+   out, so the labelled set was 166 positives and zero negatives, and a frequency over one
+   class is 1.0 for every member. `MIN_LABELLED_COMMITS` passed: it counted labels and
+   never asked whether they said anything. `predict()` now needs five of each outcome.
+2. **495 of 692 import edges unresolved**, almost none of it third-party. A `src/` layout
+   puts the package at `src/click/` while the code imports `click.core`. Resolved edges
+   197 → 331; every src-layout project's blast radius was understating itself by roughly
+   half, in the dangerous direction.
+
+**psf/requests** — 4,881 commits, 130 files, 49s → 174s.
+
+3. **Defect prediction was dead for every real project.** `MAX_FIXES_BLAMED = 300` meant
+   any repository with more than 300 fix commits truncated, which forces an all-positive
+   labelled set, which the (now correct) model declines. requests has 549 fix commits and
+   click 356 — both produced nothing. The cap was also a hardcoded limit at a call site,
+   which this project's conventions forbid precisely because it cannot then be recorded
+   with the result (C5).
+
+   It is now `szz_max_fixes_blamed`, default 2000, in the reproducibility snapshot because
+   it changes which commits are labelled and therefore every probability. A count rather
+   than a time budget: a time-bounded pass would label differently on a fast machine than
+   a slow one, and two scans of one commit must agree.
+
+   With the full budget, requests scores 4,846 commits — 745 defect-inducing against 4,101
+   clean, and medium commits at 0.397. Blame costs ~110ms per fix, so the pass is about
+   two minutes on requests and bounded at roughly four in the worst case.
+
+### Known limitation this surfaced
+
+The model buckets by size, so every commit in a bucket receives an identical probability.
+The report's "most likely to have introduced a defect" list is therefore arbitrary
+*within* the top bucket rather than a true ranking. `sample_size` and `model_version`
+travel with each row so the shape is visible, but a finer model is the honest next step
+if that list is meant to be read top-down.
+
