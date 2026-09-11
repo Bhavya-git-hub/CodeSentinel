@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, MetaData, Uuid, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -27,16 +28,31 @@ class Base(DeclarativeBase):
 
 
 class UUIDPrimaryKeyMixin:
-    """Client-generated UUID primary keys.
+    """Client-generated UUID primary keys, available the moment an instance exists.
 
     Generated in Python rather than by the database so a full object graph (scan ->
-    files -> metrics -> findings) can be built in memory and bulk-inserted in one
-    round trip, which the phase 3 pipeline needs.
+    files -> metrics -> findings, or a commit and its file_changes) can be built in
+    memory and bulk-inserted in one round trip, which the ingestion pipeline needs.
+
+    That promise is why ``__init__`` assigns the key rather than leaving it to the column
+    default. ``default=uuid.uuid4`` alone is a *Core* default, evaluated during INSERT --
+    so ``instance.id`` is still None while the graph is being assembled, and every caller
+    that reads ``parent.id`` to populate a child's foreign key writes NULL instead. That
+    failure is close to invisible: the pipeline catches the resulting IntegrityError,
+    records the scan PARTIAL, and every commit and file change is silently lost.
+
+    The column default is kept as well, for paths that bypass ``__init__`` entirely --
+    ``bulk_insert_mappings`` and loads constructed by the ORM itself.
     """
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid, primary_key=True, default=uuid.uuid4, sort_order=-100
     )
+
+    def __init__(self, **kwargs: Any) -> None:
+        """Assign a key up front unless the caller supplied one."""
+        kwargs.setdefault("id", uuid.uuid4())
+        super().__init__(**kwargs)
 
 
 class CreatedAtMixin:

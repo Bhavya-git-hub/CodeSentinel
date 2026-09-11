@@ -7,6 +7,7 @@ quietly reintroduces a forbidden pattern fails here rather than in a report.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -14,6 +15,8 @@ from sqlalchemy.schema import CreateIndex
 
 from app.models import Base, Commit, Dependency, FileChange, FileMetric, Finding, Scan
 from app.models.enums import AnalyzerStatus, ChangeType, EdgeType, ScanStatus, Severity
+
+NOW = datetime(2026, 9, 11, tzinfo=UTC)
 
 METRIC_COLUMNS = (
     "cyclomatic_complexity",
@@ -175,3 +178,46 @@ def test_a_binary_file_change_has_no_line_counts() -> None:
     )
     assert change.lines_added is None
     assert change.lines_deleted is None
+
+
+def test_a_uuid_primary_key_exists_before_the_row_is_flushed() -> None:
+    """The mixin promises in-memory object graphs; a flush-time default cannot deliver one.
+
+    ``default=uuid.uuid4`` is a Core column default applied during INSERT, so the id is
+    still None while the graph is being assembled. Every caller that reads ``parent.id``
+    to populate a child's foreign key then writes NULL, and the row is rejected.
+    """
+    assert Commit(repository_id=uuid.uuid4(), sha="a" * 40, authored_at=NOW).id is not None
+
+
+def test_a_child_built_from_its_parents_id_carries_a_real_key() -> None:
+    """This is the shape pipeline._persist_history uses for every file change.
+
+    It has to work without an intervening flush: the pipeline builds a commit and all of
+    its file_changes in memory and inserts them together. A NULL here means the entire
+    per-file churn history is silently lost and the scan degrades to PARTIAL.
+    """
+    commit = Commit(repository_id=uuid.uuid4(), sha="b" * 40, authored_at=NOW)
+
+    change = FileChange(
+        commit_id=commit.id,
+        path="pkg/module.py",
+        lines_added=1,
+        lines_deleted=0,
+        change_type=ChangeType.MODIFIED,
+    )
+
+    assert change.commit_id == commit.id
+    assert change.commit_id is not None
+
+
+def test_an_explicit_id_is_not_overwritten() -> None:
+    """Callers that supply their own key must keep it."""
+    chosen = uuid.uuid4()
+    assert Commit(id=chosen, repository_id=uuid.uuid4(), sha="c" * 40, authored_at=NOW).id == chosen
+
+
+def test_two_instances_do_not_share_a_key() -> None:
+    first = Commit(repository_id=uuid.uuid4(), sha="d" * 40, authored_at=NOW)
+    second = Commit(repository_id=uuid.uuid4(), sha="e" * 40, authored_at=NOW)
+    assert first.id != second.id
