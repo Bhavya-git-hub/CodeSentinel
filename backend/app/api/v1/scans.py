@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from typing import Any
+from typing import Annotated, Any
 
 import structlog
 from fastapi import APIRouter, Header, HTTPException, Query, status
@@ -34,8 +34,10 @@ from app.schemas.scan import (
     RiskQueue,
     ScanAccepted,
     ScanDetail,
+    ScanList,
     ScanReport,
     ScanRequest,
+    ScanSummary,
 )
 from app.services.ingestion.errors import UnsafeRepositoryUrlError
 from app.services.ingestion.url import repository_name_from_url, validate_repository_url
@@ -94,6 +96,66 @@ async def submit_scan(
     run_scan.delay(str(scan.id))
     logger.info("scan.dispatched", scan_id=str(scan.id), url=url)
     return ScanAccepted(scan_id=scan.id, status=scan.status)
+
+
+@router.get("", response_model=ScanList)
+async def list_scans(
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    scan_status: Annotated[ScanStatus | None, Query(alias="status")] = None,
+) -> ScanList:
+    """Scans, newest first.
+
+    Ordered by ``started_at`` descending and then by ``id`` descending. The second key is
+    not decoration: ``started_at`` has a server default, so two scans dispatched in the
+    same transaction can share a timestamp, and a sort with no tiebreak may return one of
+    them on two consecutive pages while never returning the other. The index
+    ``ix_scans_repository_id_started_at`` does not serve this ordering, so a deployment
+    with a long history will want one on ``started_at`` alone -- noted rather than added
+    here, because adding an index is a migration and this endpoint is new enough that
+    nobody has the row count to justify it yet.
+
+    ``status`` filters; ``total`` then counts the matching scans rather than all of them,
+    so the two numbers always describe the same set.
+    """
+    conditions = [] if scan_status is None else [Scan.status == scan_status]
+
+    total = int(
+        (
+            await session.execute(select(func.count()).select_from(Scan).where(*conditions))
+        ).scalar_one()
+    )
+
+    rows = (
+        await session.execute(
+            select(Scan, Repository.url, Repository.name)
+            .join(Repository, Repository.id == Scan.repository_id)
+            .where(*conditions)
+            .order_by(Scan.started_at.desc(), Scan.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+
+    return ScanList(
+        total=total,
+        limit=limit,
+        offset=offset,
+        scans=[
+            ScanSummary(
+                scan_id=scan.id,
+                repository_url=url,
+                repository_name=name,
+                status=scan.status,
+                commit_sha=scan.commit_sha,
+                error=scan.error,
+                started_at=scan.started_at,
+                completed_at=scan.completed_at,
+            )
+            for scan, url, name in rows
+        ],
+    )
 
 
 @router.get("/{scan_id}", response_model=ScanDetail)

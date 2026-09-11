@@ -41,6 +41,39 @@ class ScanDetail(BaseModel):
     completed_at: datetime | None
 
 
+class ScanSummary(BaseModel):
+    """One row of the scan list.
+
+    Deliberately carries no ``file_count`` or ``commit_count``. Those are two aggregate
+    queries per repository, and a list of fifty would run a hundred of them to render
+    numbers nobody reads in a list. ``ScanDetail`` still has them, one scan at a time.
+    """
+
+    scan_id: uuid.UUID
+    repository_url: str
+    repository_name: str
+    status: ScanStatus
+    commit_sha: str | None
+    error: str | None
+    started_at: datetime
+    completed_at: datetime | None
+
+
+class ScanList(BaseModel):
+    """A page of scans, newest first.
+
+    ``total`` counts every scan, not the ones on this page. A page length reported as the
+    total would make the last page of a long history read as the whole history -- the same
+    truncation error the findings endpoint avoids by counting severities over the scan
+    rather than over the page.
+    """
+
+    total: int
+    limit: int
+    offset: int
+    scans: list[ScanSummary]
+
+
 class FileRisk(BaseModel):
     """One file's place in the review queue, with the components that put it there."""
 
