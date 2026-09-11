@@ -140,6 +140,13 @@ class Settings(BaseSettings):
     # hour of the day.
     retention_interval_hours: float = Field(default=24.0, gt=0)
 
+    # -- Observability --------------------------------------------------------------
+    # Serves Prometheus exposition at /metrics. Off by default and unauthenticated when
+    # on: a scraper cannot present a caller key, so the endpoint is protected by not
+    # existing unless an operator asks for it, and by carrying only aggregates -- never
+    # a repository URL, a key, or anything naming who submitted what. See ADR 0018.
+    metrics_enabled: bool = False
+
     @field_validator("cors_origins", "clone_allowed_protocols", "api_keys", mode="before")
     @classmethod
     def _split_comma_separated(cls, value: Any) -> Any:

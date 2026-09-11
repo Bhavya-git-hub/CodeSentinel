@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.api import health
+from app.api import health, metrics
 from app.api.auth import api_key_dependency, assert_auth_configured
 from app.api.v1 import api_router
 from app.config import Settings, get_settings
@@ -80,6 +80,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         structlog.contextvars.bind_contextvars(request_id=request_id, path=request.url.path)
         try:
             response = await call_next(request)
+            if settings.metrics_enabled:
+                # The route template, not request.url.path: the raw path is one series
+                # per scan id, which is an unbounded label and eventually kills the
+                # scrape target it exists to describe. A request that matched no route
+                # is counted under a single bucket for the same reason.
+                route = getattr(request.scope.get("route"), "path", "<unmatched>")
+                metrics.record_request(request.method, route, response.status_code)
         finally:
             # api_key_name is bound by the auth dependency, which runs inside this
             # middleware. Unbinding it here rather than there keeps the request context
@@ -90,6 +97,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(health.router)
+    if settings.metrics_enabled:
+        # Registered conditionally rather than served conditionally. An always-present
+        # /metrics that answers 404 when disabled is indistinguishable from one that is
+        # enabled but misrouted, and an operator debugging a scrape needs those apart.
+        # Unauthenticated, like the health probes and for the same reason: a scraper has
+        # no key to present. ADR 0018 says what that costs and why it is acceptable.
+        app.include_router(metrics.router)
+        logger.info("metrics.enabled", path="/metrics")
     # Health probes stay unauthenticated -- an orchestrator cannot present a key,
     # and they reveal only whether dependencies are reachable.
     app.include_router(
