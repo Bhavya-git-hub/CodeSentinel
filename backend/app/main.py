@@ -81,7 +81,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             response = await call_next(request)
         finally:
-            structlog.contextvars.unbind_contextvars("request_id", "path")
+            # api_key_name is bound by the auth dependency, which runs inside this
+            # middleware. Unbinding it here rather than there keeps the request context
+            # torn down in one place, and unbind tolerates a key that was never set --
+            # which is every unauthenticated request, including the health probes.
+            structlog.contextvars.unbind_contextvars("request_id", "path", "api_key_name")
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
 

@@ -9,7 +9,13 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from app.api.auth import AuthenticationNotConfiguredError, assert_auth_configured, key_is_valid
+from app.api.auth import (
+    AuthenticationNotConfiguredError,
+    assert_auth_configured,
+    identify_key,
+    key_is_valid,
+    key_name,
+)
 from app.config import Settings
 from app.main import create_app
 
@@ -123,3 +129,68 @@ async def test_health_probes_stay_unauthenticated() -> None:
         response = await client.get("/health")
 
     assert response.status_code != 401
+
+
+# ---------------------------------------------------------------------------
+# Key identity
+#
+# The deployment guide listed "no audit trail beyond the request log" as a gap. A name
+# per key is what closes it: it turns "someone submitted 400 scans" into a sentence an
+# operator can act on, and it says which key to revoke.
+# ---------------------------------------------------------------------------
+
+
+def test_a_named_key_is_known_by_its_name() -> None:
+    assert key_name("ci-runner:s3cret") == "ci-runner"
+
+
+def test_an_unnamed_key_gets_a_derived_label() -> None:
+    """Backwards compatibility: keys configured before names existed still identify."""
+    label = key_name("s3cret")
+    assert label.startswith("key-")
+    assert label != "s3cret"
+
+
+def test_the_derived_label_is_not_a_piece_of_the_secret() -> None:
+    """A prefix of the key in every log line is a head start shipped to the aggregator."""
+    secret = "abcdefghijklmnop"
+    label = key_name(secret)
+    assert secret not in label
+    assert not secret.startswith(label.removeprefix("key-"))
+
+
+def test_the_derived_label_is_stable() -> None:
+    """An identity that changed per process would not correlate across replicas."""
+    assert key_name("s3cret") == key_name("s3cret")
+
+
+def test_different_keys_get_different_labels() -> None:
+    assert key_name("one") != key_name("two")
+
+
+def test_a_name_is_not_a_credential() -> None:
+    """The whole string is the secret. Sending only the name must not authenticate."""
+    settings = Settings(api_keys=["ci-runner:s3cret"])
+    assert key_is_valid("ci-runner", settings) is False
+    assert key_is_valid("s3cret", settings) is False
+    assert key_is_valid("ci-runner:s3cret", settings) is True
+
+
+def test_only_the_first_colon_separates_the_name() -> None:
+    """A generated secret can contain a colon; splitting on the last would eat it."""
+    assert key_name("ci:a:b:c") == "ci"
+    assert key_is_valid("ci:a:b:c", Settings(api_keys=["ci:a:b:c"])) is True
+
+
+def test_a_leading_colon_does_not_produce_an_empty_name() -> None:
+    """An empty name in a log line identifies nobody, which is worse than a digest."""
+    assert key_name(":s3cret").startswith("key-")
+
+
+def test_identify_names_the_matching_key() -> None:
+    settings = Settings(api_keys=["ci-runner:one", "dashboard:two"])
+    assert identify_key("dashboard:two", settings) == "dashboard"
+
+
+def test_identify_returns_none_for_an_unknown_key() -> None:
+    assert identify_key("nope", Settings(api_keys=["ci-runner:one"])) is None

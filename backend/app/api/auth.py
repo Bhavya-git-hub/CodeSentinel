@@ -14,10 +14,18 @@ service that came up successfully.
 
 Keys are compared with ``secrets.compare_digest``. A plain ``==`` on a secret leaks its
 prefix through timing, and while that is a slow attack it is also a free one to prevent.
+
+A key may be written ``name:secret``. The name is what every log line for that request
+carries, which is the difference between "someone submitted 400 scans" and "the CI
+integration key submitted 400 scans" -- the second is actionable and the first is not.
+The name is not a second credential and is never compared: the whole string is still the
+secret, so a caller sends exactly what the operator configured and an existing key with
+no colon keeps working unchanged.
 """
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 
 import structlog
@@ -56,17 +64,37 @@ def assert_auth_configured(settings: Settings) -> None:
         )
 
 
-def key_is_valid(candidate: str, settings: Settings) -> bool:
-    """Constant-time membership test against the configured keys.
+def key_name(key: str) -> str:
+    """The label this key is known by in logs.
+
+    ``name:secret`` yields ``name``. Anything else yields a short digest of the key,
+    because the fallback has to identify the caller without being the caller's
+    credential -- logging a prefix of the secret itself would put a usable head start
+    into every log aggregator the operator ships to.
+    """
+    prefix, separator, _ = key.partition(":")
+    if separator and prefix:
+        return prefix
+    return f"key-{hashlib.sha256(key.encode()).hexdigest()[:8]}"
+
+
+def identify_key(candidate: str, settings: Settings) -> str | None:
+    """Return the name of the configured key this matches, or None.
 
     Every configured key is compared even after a match, so the time taken does not
-    reveal the position of the matching key.
+    reveal the position of the matching key. The name is recorded only after the whole
+    loop has run, for the same reason.
     """
-    matched = False
+    matched: str | None = None
     for known in settings.api_keys:
         if secrets.compare_digest(candidate, known):
-            matched = True
+            matched = key_name(known)
     return matched
+
+
+def key_is_valid(candidate: str, settings: Settings) -> bool:
+    """Constant-time membership test against the configured keys."""
+    return identify_key(candidate, settings) is not None
 
 
 async def require_api_key(
@@ -88,7 +116,8 @@ async def require_api_key(
             headers={"WWW-Authenticate": API_KEY_HEADER},
         )
 
-    if not key_is_valid(provided, settings):
+    name = identify_key(provided, settings)
+    if name is None:
         # The reason is deliberately identical to the missing-key case in everything but
         # the word "valid": distinguishing "unknown key" from "malformed key" would tell
         # a caller which half of their guess was right.
@@ -98,6 +127,12 @@ async def require_api_key(
             detail="The API key provided is not valid.",
             headers={"WWW-Authenticate": API_KEY_HEADER},
         )
+
+    # Bound rather than logged: this attaches the caller to every event the request goes
+    # on to emit, including the ones services deeper in the stack write. A single
+    # "authenticated" line would name the caller once and leave the rest anonymous.
+    # app.main unbinds it with the rest of the request context.
+    structlog.contextvars.bind_contextvars(api_key_name=name)
 
 
 def api_key_dependency(settings: Settings):  # type: ignore[no-untyped-def]
