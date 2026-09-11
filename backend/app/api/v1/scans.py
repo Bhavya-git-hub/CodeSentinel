@@ -8,6 +8,7 @@ typo is a worse API for no benefit.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, status
@@ -26,9 +27,11 @@ from app.schemas.scan import (
     FindingItem,
     FindingsPage,
     ImpactedFile,
+    Limitation,
     RiskQueue,
     ScanAccepted,
     ScanDetail,
+    ScanReport,
     ScanRequest,
 )
 from app.services.ingestion.errors import UnsafeRepositoryUrlError
@@ -330,4 +333,182 @@ async def get_blast_radius(
         impacted=impacted,
         resolved_edges=resolved_edges,
         unresolved_edges=unresolved_edges,
+    )
+
+
+def _limitations(
+    *,
+    unmeasured: int,
+    total_files: int,
+    unresolved_edges: int,
+    coverage_files: int,
+    analyzer_statuses: dict[str, Any],
+) -> list[Limitation]:
+    """What this scan could not determine, phrased for a reader to act on.
+
+    Assembled from the same numbers the report shows rather than from a separate record,
+    so a limitation cannot drift out of step with the figure that produced it.
+    """
+    limits: list[Limitation] = []
+
+    if unmeasured:
+        limits.append(
+            Limitation(
+                subject="Unranked files",
+                detail=f"{unmeasured} of {total_files} files have no risk score.",
+                consequence=(
+                    "They are unknown, not safe. They sort last in the queue, so a file "
+                    "that could not be parsed will not appear near the top even if it is "
+                    "the worst in the repository."
+                ),
+            )
+        )
+
+    if unresolved_edges:
+        limits.append(
+            Limitation(
+                subject="Unresolved imports",
+                detail=f"{unresolved_edges} import edges could not be resolved to a file.",
+                consequence=(
+                    "Third-party imports, dynamic imports and relative imports above the "
+                    "repository root cannot be followed, so every blast radius here is a "
+                    "floor rather than a ceiling."
+                ),
+            )
+        )
+
+    if coverage_files == 0:
+        limits.append(
+            Limitation(
+                subject="Coverage",
+                detail="No file has coverage data.",
+                consequence=(
+                    "The sandbox has no network, so a target whose tests need third-party "
+                    "packages cannot run them. No file here is known to be untested; they "
+                    "are unmeasured, which is a different thing."
+                ),
+            )
+        )
+
+    for analyzer, detail in analyzer_statuses.items():
+        error = detail.get("error") if isinstance(detail, dict) else None
+        if error:
+            limits.append(
+                Limitation(
+                    subject=f"Analyser: {analyzer}",
+                    detail=str(error),
+                    consequence=(
+                        "Whatever this analyser would have reported is absent, and its "
+                        "absence is not evidence that there was nothing to report."
+                    ),
+                )
+            )
+
+    return limits
+
+
+@router.get("/{scan_id}/report", response_model=ScanReport)
+async def get_scan_report(
+    scan_id: uuid.UUID,
+    session: SessionDep,
+    top: int = Query(default=20, ge=1, le=200),
+) -> ScanReport:
+    """One scan, assembled: the ranking, the findings, the graph, and its own limits.
+
+    The limitations list is what makes this a report rather than a dump. A document that
+    shows only what was found reads as complete, and a reader cannot then distinguish a
+    clean repository from one nobody finished analysing (C3).
+    """
+    scan = await session.get(Scan, scan_id)
+    if scan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"No scan with id {scan_id}")
+
+    metric_rows = (
+        await session.execute(
+            select(FileMetric, File)
+            .join(File, File.id == FileMetric.file_id)
+            .where(FileMetric.scan_id == scan_id)
+            .order_by(FileMetric.risk_score.desc().nullslast())
+            .limit(top)
+        )
+    ).all()
+
+    total_metrics = await _count_metrics(session, scan_id, unmeasured_only=False)
+    unmeasured = await _count_metrics(session, scan_id, unmeasured_only=True)
+
+    coverage_files = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(FileMetric)
+                .where(FileMetric.scan_id == scan_id, FileMetric.coverage_pct.is_not(None))
+            )
+        ).scalar_one()
+    )
+
+    severity_rows = (
+        await session.execute(
+            select(Finding.severity, func.count())
+            .where(Finding.scan_id == scan_id)
+            .group_by(Finding.severity)
+        )
+    ).all()
+    by_severity = {str(severity.value): int(count) for severity, count in severity_rows}
+
+    edges = int(
+        (
+            await session.execute(
+                select(func.count()).select_from(Dependency).where(Dependency.scan_id == scan_id)
+            )
+        ).scalar_one()
+    )
+    unresolved_edges = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Dependency)
+                .where(Dependency.scan_id == scan_id, Dependency.resolved.is_(False))
+            )
+        ).scalar_one()
+    )
+
+    return ScanReport(
+        scan_id=scan_id,
+        status=scan.status,
+        commit_sha=scan.commit_sha,
+        started_at=scan.started_at,
+        completed_at=scan.completed_at,
+        file_count=await _count_files(session, scan.repository_id),
+        commit_count=await _count_commits(session, scan.repository_id),
+        files_ranked=total_metrics - unmeasured,
+        files_unmeasured=unmeasured,
+        findings_total=sum(by_severity.values()),
+        findings_by_severity=by_severity,
+        dependency_edges=edges,
+        dependency_edges_unresolved=unresolved_edges,
+        coverage_measured_files=coverage_files,
+        top_risks=[
+            FileRisk(
+                path=file.path,
+                is_test=file.is_test,
+                loc=file.loc,
+                cyclomatic_complexity=metric.cyclomatic_complexity,
+                maintainability_index=metric.maintainability_index,
+                churn_score=metric.churn_score,
+                normalized_complexity=metric.normalized_complexity,
+                normalized_churn=metric.normalized_churn,
+                risk_score=metric.risk_score,
+                coverage_pct=metric.coverage_pct,
+            )
+            for metric, file in metric_rows
+        ],
+        limitations=_limitations(
+            unmeasured=unmeasured,
+            total_files=total_metrics,
+            unresolved_edges=unresolved_edges,
+            coverage_files=coverage_files,
+            analyzer_statuses=scan.analyzer_statuses,
+        ),
+        config=scan.config,
+        analyzer_statuses=scan.analyzer_statuses,
     )

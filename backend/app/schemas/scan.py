@@ -128,3 +128,45 @@ class BlastRadius(BaseModel):
     impacted: list[ImpactedFile]
     resolved_edges: int
     unresolved_edges: int
+
+
+class Limitation(BaseModel):
+    """One thing this scan could not determine, and what it means for the reader.
+
+    The report carries these as first-class content rather than a footnote. A report that
+    lists only what it found reads as complete, and the reader has no way to tell the
+    difference between "clean" and "not looked at" (C3).
+    """
+
+    subject: str
+    detail: str
+    consequence: str
+
+
+class ScanReport(BaseModel):
+    """Everything one scan produced, with its own limits stated alongside."""
+
+    scan_id: uuid.UUID
+    status: ScanStatus
+    commit_sha: str | None
+    started_at: datetime
+    completed_at: datetime | None
+
+    file_count: int
+    commit_count: int
+    files_ranked: int
+    files_unmeasured: int
+
+    findings_total: int
+    findings_by_severity: dict[str, int]
+
+    dependency_edges: int
+    dependency_edges_unresolved: int
+
+    coverage_measured_files: int
+
+    top_risks: list[FileRisk]
+    limitations: list[Limitation]
+    #: Settings in force when the scan was dispatched (C5).
+    config: dict[str, Any]
+    analyzer_statuses: dict[str, Any]
