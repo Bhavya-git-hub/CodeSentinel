@@ -42,9 +42,13 @@ authentication, rate limiting, retention and a filtering Docker socket proxy.
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) ends with a list of what is still **not**
 production-hardened, which is the part worth reading first.
 
-**Nothing here has ever been run as a stack.** CI validates and builds every compose file
-on every push; no `docker compose up` has been executed by this project. See
-[ADR 0005](docs/adr/0005-deferred-docker-verification.md).
+**CI runs all three compose files on every push.** The base stack is brought up, migrated,
+and used to scan a real repository end to end; the production and TLS overlays are started
+together and checked for both API replicas, closed ports, TLS termination and live
+authentication. The one thing that has still never run anywhere is public ACME issuance,
+which needs a hostname that resolves to the host — use Let's Encrypt staging for the first
+deploy. See [ADR 0005](docs/adr/0005-deferred-docker-verification.md) for the deferral this
+discharges, and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for what is still not hardened.
 
 ## Development
 
