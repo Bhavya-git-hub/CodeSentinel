@@ -18,3 +18,4 @@ Format: context, decision, consequences. Numbered sequentially, never renumbered
 | [0011](0011-host-clone-hardening.md) | Cloning runs on the host under an unconditional hardening set |
 | [0012](0012-worker-event-loop-per-task.md) | Workers run an async body per task under `asyncio.run`, with `NullPool` |
 | [0013](0013-worker-docker-access.md) | The phase 3 worker gets no Docker access; a filtering socket proxy is chosen for phase 5 |
+| [0014](0014-analysers-run-in-the-sandbox.md) | Analysers run in the sandbox without per-tool exemption; the Docker requirement arrives in phase 4 |

@@ -1,6 +1,6 @@
 # 0013. The phase 3 worker gets no Docker access; the mechanism is chosen for phase 5
 
-**Status:** accepted — 2026-09-11
+**Status:** accepted — 2026-09-11 (amended by [0014](0014-analysers-run-in-the-sandbox.md))
 
 Supersedes [ADR 0006](0006-worker-docker-access.md).
 
@@ -59,3 +59,7 @@ Rejected alternatives:
   scans exist** (ADR 0010). It removes every labelled container, including another
   worker's live ones. Phase 3 introduces the worker but no concurrent sandboxes, so the
   bug is not reachable yet; phase 5 cannot ship without fixing it.
+- **Correction:** this ADR put the socket-proxy work in phase 5 because analysers
+  were expected there. They are phase 4, so the Docker requirement arrives one phase
+  earlier than predicted. The decision — a filtering proxy, never a raw socket mount —
+  is unchanged; see [ADR 0014](0014-analysers-run-in-the-sandbox.md).

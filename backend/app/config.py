@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     # value is part of what a scan actually enforced.
     clone_size_check_interval_seconds: float = Field(default=0.5, gt=0)
 
+    # -- Analysis (phase 4) ---------------------------------------------------------
+    # Churn decays exponentially with this half-life. Total lifetime churn would rank a
+    # file rewritten five years ago above one churning today, which is backwards for a
+    # review queue. The value changes every score, so it is part of the record (C5).
+    churn_half_life_days: float = Field(default=90.0, gt=0)
+    # Lets a deployment without a Docker daemon still ingest repositories instead of
+    # failing every scan. Recorded in the snapshot so a scan that skipped analysis says
+    # so in its own result rather than looking like one that found nothing.
+    analysis_enabled: bool = True
+
     @field_validator("cors_origins", "clone_allowed_protocols", mode="before")
     @classmethod
     def _split_comma_separated(cls, value: Any) -> Any:
@@ -126,6 +136,8 @@ class Settings(BaseSettings):
             "clone_timeout_seconds": self.clone_timeout_seconds,
             "clone_allowed_protocols": list(self.clone_allowed_protocols),
             "clone_size_check_interval_seconds": self.clone_size_check_interval_seconds,
+            "churn_half_life_days": self.churn_half_life_days,
+            "analysis_enabled": self.analysis_enabled,
         }
 
 

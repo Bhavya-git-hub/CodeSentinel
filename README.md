@@ -16,15 +16,17 @@ produces a prioritised, risk-ranked quality assessment. Static analysis alone te
 
 ## Status
 
-Phase 3 (Ingestion) — a repository URL can be submitted to `POST /api/v1/scans`; a worker
-clones it under a hardened git, inventories its files, mines its commit history, and
-records a self-describing result readable at `GET /api/v1/scans/{id}`.
+Phase 4 (Risk prioritisation) — a repository URL submitted to `POST /api/v1/scans` is
+cloned, inventoried, mined for history, measured with Radon in the sandbox, and returned
+as a risk-ranked review queue at `GET /api/v1/scans/{id}/metrics`.
 
 Delivered so far: phase 1 foundation (scaffold, configuration, data model, migrations,
-health endpoints, test harness, CI), phase 2 sandbox (an isolated, network-less, resource-
-bounded analysis container), phase 3 ingestion.
+health endpoints, test harness, CI), phase 2 sandbox (an isolated, network-less,
+resource-bounded analysis container), phase 3 ingestion, phase 4 complexity × churn
+prioritisation.
 
-No analysers yet — nothing is measured, scored or reported. Those arrive from phase 4.
+Not yet: Pylint/Bandit findings, coverage, the dependency graph, defect prediction, and
+the frontend. There is no UI — the API is the product surface today.
 
 ## Development
 
