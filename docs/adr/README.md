@@ -9,7 +9,7 @@ Format: context, decision, consequences. Numbered sequentially, never renumbered
 | [0002](0002-non-native-enums.md) | Store enums as VARCHAR with CHECK, not native PostgreSQL enums |
 | [0003](0003-analysis-tools-live-in-the-sandbox-image.md) | Analysis tools are not backend runtime dependencies |
 | [0004](0004-nullable-metrics.md) | Every metric column is nullable |
-| [0005](0005-deferred-docker-verification.md) | Phase 1 ships without local Docker verification |
+| [0005](0005-deferred-docker-verification.md) | Phase 1 ships without local Docker verification — *deferral discharged for the base stack in phase 9; the overlays remain unrun* |
 | [0006](0006-worker-docker-access.md) | Worker access to the Docker daemon is deferred to phase 2 — *superseded by [0013](0013-worker-docker-access.md)* |
 | [0007](0007-ruff-and-mypy-for-first-party-code.md) | Ruff and mypy lint our code; Pylint and Bandit analyse targets |
 | [0008](0008-dependency-pinning.md) | Backend dependencies resolve from pyproject, not a committed lock |

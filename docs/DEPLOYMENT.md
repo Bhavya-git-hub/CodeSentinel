@@ -201,17 +201,16 @@ everything as the only safe response. See
 Stated plainly, because a deployment guide that lists only what works is the same failure
 this project spends its whole design avoiding.
 
-- **Nothing here has ever been run.** `docker compose up` has not been executed by this
-  project, on any machine. CI validates all three compose files on every push and builds
-  every image, which proves they are well-formed and that the images build; it does not
-  prove the stack runs. **Your first deploy is the first real run.** See
-  [ADR 0005](adr/0005-deferred-docker-verification.md).
-- **The proxy's forwarding layer is untested.** Its validator has tests covering every
-  escalation ADR 0015 named, but that it correctly relays bytes to a real daemon has not
-  been demonstrated. If containers fail to start on first deploy, check
-  `socket_proxy.refused` in the proxy's logs: a refusal names the key it rejected, and a
-  legitimate one means the allowlist in `socket_filter.py` needs a deliberate edit
-  (ADR 0017).
+- **The base stack runs; the production and TLS overlays have still never been started.**
+  CI now brings up `docker-compose.yml` on every push, migrates it, and scans a real
+  repository end to end (run 34621847390 was the first to pass). What that does *not*
+  cover: two API replicas, two workers, the `!override` port removals under load, Caddy,
+  or ACME issuance — which cannot be exercised anywhere without a hostname that resolves
+  to the host. ADR 0005's deferral is discharged for the base stack only.
+- **The first deploy still has host prerequisites that nothing can check for you.** The
+  clone directory must exist and be owned by uid 10001, and `CODESENTINEL_DOCKER_GID`
+  must be the socket's real group. Both are step 2. Both were found by running the stack
+  rather than by reasoning about it, and both used to fail as something else entirely.
 - **ACME issuance has not been exercised.** The TLS overlay cannot be validated anywhere
   without a hostname that resolves to the machine, so CI checks only that the overlay is
   well-formed and that it unpublishes the API and frontend ports. If Caddy cannot get a

@@ -101,6 +101,97 @@ the part a reader cannot recover from the code. The test now writes explicit dis
 timestamps, which is what a real deployment produces, since each submission is its own
 transaction.
 
+## Running the stack, and the four defects that found
+
+`docker compose up` had never been executed by this project, on any machine, since phase 1
+([ADR 0005](../adr/0005-deferred-docker-verification.md)). The development machine still
+has no Docker -- no Desktop, no WSL distro, no daemon -- so a `smoke` job was added and the
+first run happened on a runner.
+
+**It worked on the fifth attempt.** CI run **34621847390**: the stack comes up, migrates,
+reports readiness with both dependencies ok, serves the SPA and the API on one origin, and
+scans `pallets/itsdangerous` end to end:
+
+| | |
+|---|---|
+| Files / commits | 50 / 436 |
+| Files ranked | 12 (38 unmeasured -- the non-Python files) |
+| Findings | 213: 1 critical, 81 minor, 131 info |
+| Dependency edges | 127 |
+| Coverage measured | 0 files, correctly -- the sandbox is offline |
+
+Four defects, none of which 406 passing tests, a green four-job CI and eleven prior runs
+could reach. Each was invisible to the layer above it.
+
+**1. The clones volume was unwritable, so every scan died before cloning.** Docker seeds an
+empty named volume from whatever the image has at the mount point, ownership included --
+and the image had nothing there, so the volume came up `root:root` while the container runs
+as uid 10001. `mkdtemp` raised EACCES.
+
+**2. Which stranded the scan in RUNNING forever, with `error` NULL.** The worse half, and a
+straight C3 violation: a row in RUNNING carries no reason, is indistinguishable from a scan
+still working, and is collected by nothing -- the retention pruner skips non-terminal scans
+deliberately, so it stays until somebody deletes it by hand.
+
+The line that raised was *already guarded*. `clone_root.mkdir` had been added to defend
+against `FileNotFoundError`, under a comment warning that anything escaping there "would
+strand the scan in RUNNING forever" -- and the next statement raised `PermissionError`,
+which is not `FileNotFoundError` and is not an `IngestionError`, and stranded the scan in
+RUNNING forever. Guarding a failure mode one exception type at a time is how that keeps
+happening, so the fix closes the class: clone-root setup reports a reason naming the path
+and the likely cause, and a catch-all records the reason on the scan row and re-raises.
+
+**3. The socket proxy could not open the socket, and started anyway.**
+`/var/run/docker.sock` is `root:docker` mode 660; the proxy runs as uid 10001 and nothing
+put it in that group. It served 500 to every request for the life of the deployment.
+
+This is the one DEPLOYMENT.md had flagged since phase 5 as *"untested... that it correctly
+relays bytes to a real daemon has not been demonstrated"*, and it is the most instructive
+of the four, because **every layer above it behaved correctly**: the worker reported "the
+sandbox was unavailable", the pipeline recorded PARTIAL with that reason, the report said
+every file was unmeasured. All true. None of it says "the proxy cannot open the socket".
+Politeness all the way up produced a deployment that looked like a working system analysing
+unremarkable repositories.
+
+It now refuses to start, for the reason ADR 0016 gives for authentication: a deployment
+that does not start gets investigated, one that comes up green does not. The check connects
+rather than calling `os.access`, because access(2) answers about mode bits and a socket can
+look readable and still refuse a connection. It lives in the lifespan rather than in
+`create_proxy`, so importing the module does not require a live socket.
+
+**4. The clone root could not be a named volume at all.** With the proxy working, container
+creation failed with `bind source path does not exist`. The worker asks the daemon for a
+read-only bind mount of the clone; the daemon runs on the host and resolves bind sources
+against the *host* filesystem, so a path that exists only inside the worker cannot be
+mounted. The clone root is now a bind mount using the same path on both sides.
+
+Rejected: mounting the whole clones volume into the sandbox by name. It works, and it lets
+one target's analysis container read every other target's clone. These are arbitrary
+repositories chosen by callers, analysed side by side; ADR 0009 does not trade isolation
+for convenience.
+
+### The smoke test got it wrong twice, in both directions
+
+Worth recording, because the two mistakes are the subject of this whole project.
+
+**First it was too lax.** It asserted a terminal status and non-zero file and commit
+counts -- all of which a totally failed analysis satisfies, because PARTIAL is compatible
+with every analyser failing. So it passed a scan with 50 files inventoried, 50 unmeasured
+and 0 findings. The acceptance test reproduced, in itself, the exact failure this system is
+built to prevent: **a scan that found nothing looking like a scan that found nothing
+wrong.**
+
+**Then it was too strict.** Tightened to reject any analyzer status carrying an error, it
+went red on the coverage skip -- "the sandbox has no network, so the target's dependencies
+were not installed" -- which is the designed, correct outcome. That is the more dangerous
+mistake of the two: a red build for the honest result is what pressures the next person
+into weakening the skip so CI goes green, turning "could not measure" into "measured
+nothing".
+
+It now asserts on the **measurement** (`ranked > 0`, which total failure cannot satisfy)
+rather than on the status, and treats only an explicit `failed` as a failure. Reasons print
+either way, so a skip is visible without being fatal.
+
 ## The 400px layout, and the defect it was hiding
 
 The frontend sprint record closed with this, under **NOT verified**: *"Chrome's renderer
@@ -178,12 +269,19 @@ every such scroller itself within the page bounds. The wide tables on `/scans` a
 
 - ~~CI must confirm retention.~~ **Done** — run 34616216187, zero skips. Pruning is
   demonstrated to reclaim the repository-scoped tables against a real PostgreSQL.
-- **The stack has still never been run.** Three compose files are now validated by CI and
-  none has been started. ACME issuance in particular cannot be exercised without a
-  hostname that resolves to the host.
-- **Stuck scans have no owner.** The pruner deliberately will not collect a RUNNING scan.
-  Nothing else does either, so `codesentinel_scans{status="running"}` grows without bound
-  where scans die mid-pipeline. This is the clearest unclaimed problem left.
+- ~~The stack has still never been run.~~ **The base stack now runs in CI on every push**
+  (run 34621847390). The production and TLS overlays are still only validated, never
+  started: two API replicas, two workers, the `!override` port removals and ACME issuance
+  remain unexercised, and ACME cannot be exercised anywhere without a real hostname.
+- **Stuck scans have no owner.** The pruner deliberately will not collect a RUNNING scan,
+  and nothing else does either. The pipeline no longer *creates* them -- an unexpected
+  exception now records FAILED with its reason -- but a worker killed mid-scan still leaves
+  one behind, and the running-scan gauge is the only thing that would show it. This remains
+  the clearest unclaimed problem.
+- **`analyzer_statuses` folds every analysis error under the `radon` key.** The real run
+  surfaced a coverage skip reported under `radon`, which names the wrong tool. Pre-existing
+  since phases 5-8, and cosmetic only in the sense that the reason itself is intact; an
+  operator reading the key learns something false about which analyser was involved.
 - **API keys are still live secrets in the environment**, unhashed, unrotatable and
   unscoped. ADR 0020 answers "which key was that" and deliberately nothing else.
 - **The defect-prediction model still buckets by size**, so the report's top-risk commit
