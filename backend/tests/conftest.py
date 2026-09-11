@@ -327,3 +327,26 @@ def git_repo(tmp_path: Path, git_binary: str) -> Path:
 def git_repo_url(git_repo: Path) -> str:
     """The fixture repository as a file:// URL, for the cloner to clone."""
     return git_repo.as_uri()
+
+
+@pytest.fixture
+def large_git_repo(git_repo: Path, git_binary: str) -> Path:
+    """The fixture repository plus a committed payload larger than a 1 MB budget.
+
+    Incompressible bytes, because git compresses objects: a megabyte of zeroes lands as
+    a few hundred bytes and the size guard would never fire.
+
+    Committed, not merely written: a clone copies committed objects, not the working
+    tree, so an uncommitted payload would leave the size test passing for the wrong
+    reason -- against a clone that never contained it.
+    """
+    payload = git_repo / "big.bin"
+    payload.write_bytes(os.urandom(3 * 1024 * 1024))
+    _git(git_binary, git_repo, "add", "-A")
+    _git(git_binary, git_repo, "commit", "-m", "chore: add payload", "--quiet")
+    return git_repo
+
+
+@pytest.fixture
+def large_git_repo_url(large_git_repo: Path) -> str:
+    return large_git_repo.as_uri()
