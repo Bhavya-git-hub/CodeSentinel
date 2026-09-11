@@ -34,39 +34,72 @@ layout verified at last.
 
 ## Acceptance
 
-Locally: **331 passed, 75 skipped** (backend), **58 passed, 0 skipped** (frontend), with
-ruff, ruff format, mypy strict, eslint, `tsc --noEmit` and `vite build` all clean.
+**All green in CI run 34616216187: 406 passed, 0 skipped, 0 failed, across all four
+jobs.** `CODESENTINEL_REQUIRE_INTEGRATION=1` is set, so zero skips means every integration
+test actually executed against real PostgreSQL and a real Docker daemon — including the
+retention cascade, which is the claim this phase turns on and which could not be
+demonstrated locally at all.
 
-**The 75 skips are the whole caveat.** Nineteen of them are new: the retention integration
-tests, which are the ones that matter most in this phase. What they assert is a foreign-key
-cascade — that deleting a repository takes its commits and files with it — and a cascade is
-a property of PostgreSQL, not of this code. Locally there is no PostgreSQL and no Docker,
-so **retention's central claim is unverified here and CI is the acceptance authority for
-it.** The unit tests cover the refusal on `retention_days=0` and the shape of the beat
-schedule; they cannot cover the delete.
+Locally: 331 passed, 75 skipped (no Docker, no PostgreSQL on this machine). The gap
+between 406 and 331 is the 75, and 19 of them are this phase's own.
 
-Equally unverified locally: everything the sandbox tests cover (constraint C1), the scan
-list endpoint against a real database, and every compose file — this machine has no
-daemon, so the three overlays are checked by CI's `docker compose config` and by nothing
-here.
+| Criterion | Evidence |
+|---|---|
+| The scan list reports the total, not the page length | `test_the_list_reports_the_total_not_the_page_length` |
+| Paging returns every scan exactly once | `test_paging_returns_every_scan_exactly_once` |
+| The list is newest first | `test_the_list_is_newest_first` |
+| Retention refuses a window of zero | `test_a_retention_of_zero_is_refused_not_treated_as_a_cutoff_of_now` |
+| Nothing is scheduled when retention is off | `test_nothing_is_scheduled_when_retention_is_off` |
+| A running scan is never pruned, however old | `test_a_running_scan_is_never_pruned_however_old` |
+| Pruning frees the repository-scoped tables | `test_a_repository_with_no_scans_left_is_removed_too` |
+| A repository keeping one scan keeps its history | `test_a_repository_keeping_one_scan_keeps_its_history` |
+| A database outage omits gauges rather than zeroing them | `test_a_database_outage_omits_the_gauges_rather_than_zeroing_them` |
+| Request metrics cannot grow an unbounded label set | `test_an_unmatched_path_does_not_create_a_series_per_url` |
+| A key name is not a credential | `test_a_name_is_not_a_credential` |
+| The derived label is not a piece of the secret | `test_the_derived_label_is_not_a_piece_of_the_secret` |
+| A refused credential save is reported as refused | `reports a refused save instead of claiming success` |
+| The panel never shows the secret half of a key | `never displays the secret half of a stored key` |
+| An unreachable API is not rendered as an empty history | `ScansPage` → `History` renders the error |
+| The TLS overlay unpublishes the API and frontend ports | CI step "Validate the TLS overlay" |
 
-| Criterion | Evidence | Verified where |
-|---|---|---|
-| The scan list reports the total, not the page length | `test_the_list_reports_the_total_not_the_page_length` | CI (needs PostgreSQL) |
-| Paging returns every scan exactly once | `test_paging_returns_every_scan_exactly_once` | CI (needs PostgreSQL) |
-| Retention refuses a window of zero | `test_a_retention_of_zero_is_refused_not_treated_as_a_cutoff_of_now` | locally |
-| Nothing is scheduled when retention is off | `test_nothing_is_scheduled_when_retention_is_off` | locally |
-| A running scan is never pruned | `test_a_running_scan_is_never_pruned_however_old` | CI (needs PostgreSQL) |
-| Pruning frees the repository-scoped tables | `test_a_repository_with_no_scans_left_is_removed_too` | CI (needs PostgreSQL) |
-| A repository keeping one scan keeps its history | `test_a_repository_keeping_one_scan_keeps_its_history` | CI (needs PostgreSQL) |
-| A database outage omits gauges rather than zeroing them | `test_a_database_outage_omits_the_gauges_rather_than_zeroing_them` | locally |
-| Request metrics cannot grow an unbounded label set | `test_an_unmatched_path_does_not_create_a_series_per_url` | locally |
-| A key name is not a credential | `test_a_name_is_not_a_credential` | locally |
-| The derived label is not a piece of the secret | `test_the_derived_label_is_not_a_piece_of_the_secret` | locally |
-| A refused credential save is reported as refused | `reports a refused save instead of claiming success` | locally |
-| The panel never shows the secret half of a key | `never displays the secret half of a stored key` | locally |
-| An unreachable API is not rendered as an empty history | `ScansPage` → `History` renders the error | locally |
-| The TLS overlay actually unpublishes the API and frontend ports | CI step "Validate the TLS overlay" | CI (needs Docker) |
+One pre-existing warning persists and is not from this phase:
+`test_persistence.py::test_repository_url_is_unique` raises
+`SAWarning: transaction already deassociated from connection`.
+
+### The defects CI caught
+
+Both were in the new scan-list tests, and neither could have been found locally, because
+both tests need PostgreSQL and skip without it.
+
+**1. `owner/project`, not the last path segment.** Two assertions expected
+`repository_name_from_url` to return `requests`; it returns `psf/requests`, and its
+docstring says so. The production code is right and deliberately so — keeping the owner is
+what stops two repositories both called "requests" being indistinguishable in a list,
+which is the thing the list exists to prevent. Only the expected strings changed; what
+each test is about was left alone, so neither was weakened to make it pass. Two fixtures
+carried the same mistake (`demo.ts` said `starlette`, the `ScanHistory` test said
+`requests`) and were corrected with it — a fixture showing a shape the API cannot produce
+is a fixture lying about itself, which in demo mode is the one thing it must not do.
+
+**2. The ordering test could not have detected a wrong order.** CI returned the list
+oldest-first. The endpoint was correct; the test was measuring the harness.
+
+PostgreSQL's `now()` is the **transaction** clock, not the statement clock — it returns
+the same instant for every statement in a transaction. This module's session is a single
+rolled-back transaction, so three scans POSTed inside it all carried an identical
+`started_at`, and their relative order fell through to the `id` tiebreak, which is a
+random UUID and says nothing about recency. The test asserted the result of that and
+called it an ordering.
+
+This is the more interesting of the two, because it sharpened a claim as well as fixing a
+test. The tiebreak buys **determinism, not recency**: scans sharing a timestamp come back
+in an arbitrary but *stable* order, which is precisely what paging needs and what
+`test_paging_returns_every_scan_exactly_once` covers — that test passed throughout. The
+endpoint docstring had said "two scans dispatched in the same transaction can share a
+timestamp" without saying why; it now names `now()`'s transaction scope, because that is
+the part a reader cannot recover from the code. The test now writes explicit distinct
+timestamps, which is what a real deployment produces, since each submission is its own
+transaction.
 
 ## The 400px layout, and the defect it was hiding
 
@@ -143,9 +176,8 @@ every such scroller itself within the page bounds. The wide tables on `/scans` a
 
 ## Obligations this leaves
 
-- **CI must confirm retention.** Nineteen tests skipped here. Until a green run with
-  `CODESENTINEL_REQUIRE_INTEGRATION=1`, the claim that pruning reclaims the
-  repository-scoped tables is written but not demonstrated.
+- ~~CI must confirm retention.~~ **Done** — run 34616216187, zero skips. Pruning is
+  demonstrated to reclaim the repository-scoped tables against a real PostgreSQL.
 - **The stack has still never been run.** Three compose files are now validated by CI and
   none has been started. ACME issuance in particular cannot be exercised without a
   hostname that resolves to the host.
