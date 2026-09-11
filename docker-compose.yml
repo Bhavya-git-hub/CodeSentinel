@@ -76,6 +76,17 @@ services:
     # is deliberately NOT done yet -- the options are evaluated in phase 2.
     # See docs/adr/0006-worker-docker-access.md.
 
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    # Demo mode is deliberately NOT set here. A running stack has a real API, and
+    # serving fixtures beside it would be the silent fallback the data layer forbids.
+
 volumes:
   pgdata:
   clones:

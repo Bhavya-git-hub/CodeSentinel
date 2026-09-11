@@ -123,6 +123,29 @@ jobs:
             backend/coverage.xml
             backend/resolved-dependencies.txt
 
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      # --run, never watch mode: vitest defaults to watching, which in CI is a job that
+      # hangs until the runner times out rather than a job that fails.
+      - run: npm run test -- --run
+      - run: npm run build
+
   build:
     name: Build images
     runs-on: ubuntu-latest
