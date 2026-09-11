@@ -64,6 +64,15 @@ class EdgeType(StrEnum):
     DYNAMIC = "dynamic"
 
 
+class ChangeType(StrEnum):
+    """How a file was touched by a commit."""
+
+    ADDED = "added"
+    MODIFIED = "modified"
+    DELETED = "deleted"
+    RENAMED = "renamed"
+
+
 def enum_column(enum_cls: type[StrEnum], name: str, length: int = 32) -> SAEnum:
     """Build the storage type for an enum column.
 

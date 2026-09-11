@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from functools import lru_cache
+from typing import Any
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -11,23 +12,29 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import Pool
 
 from app.config import Settings, get_settings
 
 
-def build_engine(settings: Settings) -> AsyncEngine:
+def build_engine(settings: Settings, *, poolclass: type[Pool] | None = None) -> AsyncEngine:
     """Create an engine for the given settings.
 
     Takes settings explicitly rather than reading globals so tests and Alembic can build
     an engine against a different database without mutating process state.
+
+    ``poolclass`` exists for the Celery worker, which runs each task under its own
+    ``asyncio.run``. A pooled asyncpg connection created in one event loop and reused in
+    another raises "attached to a different loop", so the worker passes ``NullPool``.
     """
-    return create_async_engine(
-        str(settings.database_url),
-        echo=settings.db_echo,
-        pool_size=settings.db_pool_size,
-        max_overflow=settings.db_max_overflow,
-        pool_pre_ping=True,
-    )
+    kwargs: dict[str, Any] = {"echo": settings.db_echo, "pool_pre_ping": True}
+    if poolclass is None:
+        kwargs |= {"pool_size": settings.db_pool_size, "max_overflow": settings.db_max_overflow}
+    else:
+        # pool_size and max_overflow are not valid arguments for NullPool, which is why
+        # they live in this branch rather than being passed unconditionally.
+        kwargs["poolclass"] = poolclass
+    return create_async_engine(str(settings.database_url), **kwargs)
 
 
 @lru_cache(maxsize=1)

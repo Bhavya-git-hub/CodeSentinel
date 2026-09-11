@@ -16,8 +16,15 @@ produces a prioritised, risk-ranked quality assessment. Static analysis alone te
 
 ## Status
 
-Phase 1 (Foundation) — scaffold, configuration, data model, migrations, health endpoints,
-test harness, CI. No analysers, sandbox, or ingestion yet.
+Phase 3 (Ingestion) — a repository URL can be submitted to `POST /api/v1/scans`; a worker
+clones it under a hardened git, inventories its files, mines its commit history, and
+records a self-describing result readable at `GET /api/v1/scans/{id}`.
+
+Delivered so far: phase 1 foundation (scaffold, configuration, data model, migrations,
+health endpoints, test harness, CI), phase 2 sandbox (an isolated, network-less, resource-
+bounded analysis container), phase 3 ingestion.
+
+No analysers yet — nothing is measured, scored or reported. Those arrive from phase 4.
 
 ## Development
 
@@ -35,3 +42,5 @@ and SQLite is never substituted.
 ## Documentation
 
 - Architecture decisions: [docs/adr/](docs/adr/)
+- Design specifications: [docs/specs/](docs/specs/)
+- Sprint records: [docs/sprints/](docs/sprints/)

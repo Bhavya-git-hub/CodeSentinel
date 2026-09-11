@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     # NoDecode: pydantic-settings otherwise JSON-decodes list fields inside the env
     # source, before any validator runs, so a plain comma-separated value would raise
-    # rather than reach _split_cors_origins.
+    # rather than reach _split_comma_separated.
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:5173"]
     )
@@ -77,13 +77,26 @@ class Settings(BaseSettings):
     clone_root: str = "/var/lib/codesentinel/clones"
     max_repo_size_mb: int = Field(default=1024, ge=1)
     clone_timeout_seconds: int = Field(default=900, ge=1)
+    # The transport allowlist. Default https only: an ext:: URL is arbitrary command
+    # execution on the host, and the exotic transports have no legitimate use here.
+    # This is a setting rather than a constant so tests can clone from a local path
+    # without the cloner growing a "just for testing" branch (anti-pattern #1) -- and
+    # because it lands in the reproducibility snapshot, a scan that ran under a relaxed
+    # allowlist says so in its own record.
+    clone_allowed_protocols: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["https"]
+    )
+    # How often the size guard samples the growing clone. The guard is a ceiling with
+    # overshoot, not a hard cap: the bound is limit + (interval x transfer rate), so this
+    # value is part of what a scan actually enforced.
+    clone_size_check_interval_seconds: float = Field(default=0.5, gt=0)
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "clone_allowed_protocols", mode="before")
     @classmethod
-    def _split_cors_origins(cls, value: Any) -> Any:
+    def _split_comma_separated(cls, value: Any) -> Any:
         """Accept a comma-separated string so the value can come from a .env file."""
         if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
+            return [item.strip() for item in value.split(",") if item.strip()]
         return value
 
     @property
@@ -111,6 +124,8 @@ class Settings(BaseSettings):
             "sandbox_timeout_seconds": self.sandbox_timeout_seconds,
             "max_repo_size_mb": self.max_repo_size_mb,
             "clone_timeout_seconds": self.clone_timeout_seconds,
+            "clone_allowed_protocols": list(self.clone_allowed_protocols),
+            "clone_size_check_interval_seconds": self.clone_size_check_interval_seconds,
         }
 
 
