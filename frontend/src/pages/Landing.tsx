@@ -27,14 +27,19 @@ export function Landing() {
           <div className="hero__queue-head" aria-hidden="true">
             <span>File</span>
             <span>Churn</span>
-            <span>Weighting</span>
+            <span className="hero__weight">Weighting</span>
             <span>Risk</span>
           </div>
           {HERO_ROWS.map((row) => (
             <div className="hero__row" key={row.path}>
               <span className="path">{row.path}</span>
               <Metric value={row.churn} digits={1} />
-              <Bar value={row.weight} label={`churn weighting for ${row.path}`} />
+              {/* Wrapped so the stylesheet can drop this column at phone widths. It is
+                  the only one that can go: churn is still a measured green figure
+                  beside it, and Risk is the claim the page is making. */}
+              <div className="hero__weight">
+                <Bar value={row.weight} label={`churn weighting for ${row.path}`} />
+              </div>
               <Metric value={null} />
             </div>
           ))}

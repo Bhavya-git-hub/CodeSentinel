@@ -199,3 +199,49 @@
     grid-template-columns: minmax(150px, 2fr) 66px 84px 66px;
   }
 }
+
+/*
+ * At a phone width the four tracks above still want ~426px inside a 345px container, so
+ * the Risk column slid out of the scroller -- and Risk reading `None` is the entire
+ * argument this hero makes. A visitor on a phone saw File, Churn and Weighting and had
+ * to scroll sideways to find the point.
+ *
+ * Measured, not guessed: in a 400px viewport the row lays out at 345px wide.
+ *
+ * The weighting bar is the column that gives way. Churn is still rendered as a measured
+ * green figure beside it, so the phosphor still reads as "this was determined", and the
+ * two columns that carry the claim -- a real measurement and an admitted unknown -- both
+ * survive.
+ */
+@media (max-width: 480px) {
+  .hero__queue-head,
+  .hero__row {
+    grid-template-columns: minmax(0, 1fr) 58px 58px;
+    gap: var(--gap-xs);
+  }
+
+  .hero__weight {
+    display: none;
+  }
+}
+
+.page__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-m);
+  /* Grid and flex children default to min-width:auto, which lets a wide table push the
+     whole page sideways instead of scrolling inside its own container. */
+  min-width: 0;
+}
+
+.page__section > h2 {
+  font-family: var(--font-display);
+  font-size: var(--step-2);
+  margin: 0;
+}
+
+.history__table .path {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--bone);
+}
