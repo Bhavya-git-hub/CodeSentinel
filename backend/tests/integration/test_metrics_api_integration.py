@@ -164,3 +164,71 @@ async def test_a_finding_with_no_file_is_still_returned(
 
     assert body["findings"][0]["path"] is None
     assert body["total"] == 1
+
+
+async def _scan_with_an_inventory_but_no_metrics(session: AsyncSession) -> Scan:
+    """What a scan looks like when analysis never ran: files inventoried, no metric rows.
+
+    No other fixture produces this shape, because every fixture that inventories also
+    analyses. It is the shape a real deployment has whenever there is no Docker daemon or
+    ``analysis_enabled`` is false -- which is how the defect below reached a live scan
+    without any test noticing.
+    """
+    repository = Repository(url="https://example.test/unanalysed", name="a/unanalysed")
+    session.add(repository)
+    await session.flush()
+
+    scan = Scan(repository_id=repository.id, status=ScanStatus.PARTIAL)
+    session.add(scan)
+    await session.flush()
+
+    for path in ("a.py", "b.py", "c.py", "notes.md"):
+        session.add(File(repository_id=repository.id, path=path))
+    await session.flush()
+    return scan
+
+
+async def test_a_scan_that_measured_nothing_reports_its_files_as_unmeasured(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Not as an empty repository, which is what it used to say.
+
+    ``total_files`` counted FileMetric rows. With analysis skipped there are none, so a
+    repository with four files reported "0 files, 0 unmeasured" -- indistinguishable from
+    a repository containing nothing at all, and the opposite of what happened.
+    """
+    scan = await _scan_with_an_inventory_but_no_metrics(db_session)
+
+    body = (await client.get(f"/api/v1/scans/{scan.id}/metrics")).json()
+
+    assert body["total_files"] == 4, "the inventory is the denominator, not the metric rows"
+    assert body["unmeasured"] == 4, "every file went unmeasured; none of them is absent"
+
+
+async def test_the_report_admits_that_nothing_was_ranked(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """The caveat is raised by a non-zero ``unmeasured``, so zeroing it silenced it.
+
+    The scan that measured least was therefore the one that admitted to least, which is
+    the precise inversion this codebase exists to prevent.
+    """
+    scan = await _scan_with_an_inventory_but_no_metrics(db_session)
+
+    report = (await client.get(f"/api/v1/scans/{scan.id}/report")).json()
+
+    assert report["files_ranked"] == 0
+    assert report["files_unmeasured"] == 4
+    subjects = [limitation["subject"] for limitation in report["limitations"]]
+    assert "Unranked files" in subjects, f"no caveat was raised; got {subjects}"
+
+
+async def test_ranked_and_unmeasured_always_account_for_every_file(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A reader adds these two numbers and expects the file count. It has to hold."""
+    scan = await _scan_with_metrics(db_session)
+
+    report = (await client.get(f"/api/v1/scans/{scan.id}/report")).json()
+
+    assert report["files_ranked"] + report["files_unmeasured"] == report["file_count"]

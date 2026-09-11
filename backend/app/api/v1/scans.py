@@ -229,8 +229,9 @@ async def get_scan_metrics(
         )
     ).all()
 
-    total_files = await _count_metrics(session, scan_id, unmeasured_only=False)
-    unmeasured = await _count_metrics(session, scan_id, unmeasured_only=True)
+    total_files, unmeasured = await _coverage_of_the_inventory(
+        session, scan_id=scan_id, repository_id=scan.repository_id
+    )
 
     return RiskQueue(
         scan_id=scan_id,
@@ -265,6 +266,42 @@ async def _count_metrics(
         query = query.where(FileMetric.risk_score.is_(None))
     result = await session.execute(query)
     return int(result.scalar_one())
+
+
+async def _coverage_of_the_inventory(
+    session: AsyncSession, *, scan_id: uuid.UUID, repository_id: uuid.UUID
+) -> tuple[int, int]:
+    """How many files this scan knows about, and how many of them it could not rank.
+
+    The denominator is the **inventory**, not the number of metric rows. Those are the
+    same number whenever analysis runs at all, and they diverge in exactly the case that
+    matters: when analysis is skipped entirely -- no Docker daemon, or
+    ``analysis_enabled`` false -- no ``FileMetric`` rows are written at all.
+
+    Counting metric rows then reported ``0 of 0 files unmeasured`` for a repository with
+    eight files in it, which reads as an empty repository rather than an unanalysed one.
+    Worse, it silenced the caveat: ``_limitations`` raises "Unranked files" only when
+    ``unmeasured`` is non-zero, so the queue that had measured nothing was the one that
+    admitted to nothing. That is anti-pattern #2 inverted -- not a zero standing in for a
+    missing value, but a missing value erasing the count of what is missing.
+
+    Found by running the thing: a real scan of a real repository with no daemon present.
+    No fixture had ever produced a scan with files and no metric rows, because every
+    fixture that inventories also analyses.
+    """
+    ranked = int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(FileMetric)
+                .where(FileMetric.scan_id == scan_id, FileMetric.risk_score.is_not(None))
+            )
+        ).scalar_one()
+    )
+    total = await _count_files(session, repository_id)
+    # max() rather than a bare subtraction: the two counts come from different tables, and
+    # a negative "unmeasured" would be a nonsense number presented with total confidence.
+    return total, max(total - ranked, 0)
 
 
 @router.get("/{scan_id}/findings", response_model=FindingsPage)
@@ -534,8 +571,9 @@ async def get_scan_report(
         )
     ).all()
 
-    total_metrics = await _count_metrics(session, scan_id, unmeasured_only=False)
-    unmeasured = await _count_metrics(session, scan_id, unmeasured_only=True)
+    total_metrics, unmeasured = await _coverage_of_the_inventory(
+        session, scan_id=scan_id, repository_id=scan.repository_id
+    )
 
     coverage_files = int(
         (
