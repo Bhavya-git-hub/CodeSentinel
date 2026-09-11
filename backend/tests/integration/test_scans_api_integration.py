@@ -120,7 +120,9 @@ async def test_the_list_is_newest_first(client: AsyncClient) -> None:
     body = (await client.get("/api/v1/scans")).json()
 
     assert body["total"] == 3
-    assert [row["repository_name"] for row in body["scans"]] == ["three", "two", "one"]
+    # owner/project, not the last segment: repository_name_from_url keeps the owner so
+    # two repositories both called "requests" stay distinguishable in a list.
+    assert [row["repository_name"] for row in body["scans"]] == ["c/three", "b/two", "a/one"]
 
 
 async def test_the_list_reports_the_total_not_the_page_length(client: AsyncClient) -> None:
@@ -184,7 +186,7 @@ async def test_the_list_names_the_repository_behind_each_scan(client: AsyncClien
     row = (await client.get("/api/v1/scans")).json()["scans"][0]
 
     assert row["repository_url"] == "https://github.com/psf/requests"
-    assert row["repository_name"] == "requests"
+    assert row["repository_name"] == "psf/requests"
 
 
 async def test_an_empty_history_is_an_empty_list_not_an_error(client: AsyncClient) -> None:

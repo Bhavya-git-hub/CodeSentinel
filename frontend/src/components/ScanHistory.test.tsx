@@ -9,7 +9,7 @@ function summary(overrides: Partial<ScanSummary> = {}): ScanSummary {
   return {
     scan_id: "11111111-1111-1111-1111-111111111111",
     repository_url: "https://github.com/psf/requests",
-    repository_name: "requests",
+    repository_name: "psf/requests",
     status: "succeeded",
     commit_sha: "abcdef1234567890",
     error: null,
@@ -81,7 +81,7 @@ describe("ScanHistory", () => {
   it("links each row to its scan", () => {
     draw(page());
 
-    expect(screen.getByRole("link", { name: "requests" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "psf/requests" })).toHaveAttribute(
       "href",
       "/scans/11111111-1111-1111-1111-111111111111",
     );

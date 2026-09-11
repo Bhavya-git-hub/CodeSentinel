@@ -128,7 +128,7 @@ export const demoSource: DataSource = {
         {
           scan_id: DEMO_SCAN_ID,
           repository_url: "https://github.com/encode/starlette",
-          repository_name: "starlette",
+          repository_name: "encode/starlette",
           status: scan.status,
           commit_sha: scan.commit_sha,
           error: scan.error,
