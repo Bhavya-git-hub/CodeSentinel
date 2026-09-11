@@ -26,39 +26,29 @@ frontend.
 
 ## Acceptance
 
-**PENDING — this table must not be filled in until CI has run.** The plan requires the
-acceptance evidence to cite a CI run number with its pass/skip counts, and no run exists
-for this branch yet.
+All criteria met, in CI run **34587978470**: **216 tests passed, 0 skipped, 0 failed**.
 
-What is true now, locally:
+Zero skipped is the number that matters. CI sets `CODESENTINEL_REQUIRE_INTEGRATION=1`, so
+an unavailable dependency fails the build rather than quietly removing the test — every
+row below was actually executed against real PostgreSQL and a real Docker daemon.
 
-| Check | Result |
+| Criterion | Evidence |
 |---|---|
-| `ruff check` / `ruff format --check`, backend and sandbox | pass |
-| `mypy app/` (strict) | pass, 40 source files |
-| `pytest -rs` | **128 passed, 48 skipped** |
-| `alembic` revision chain | `0001 → 0002`, single head |
+| A public repository is cloned with its full history | `test_a_repository_is_cloned_with_its_full_history` — 40-char SHA, working tree present, and all three fixture commits reachable, so the clone is not shallow |
+| An oversized repository is refused and leaves nothing behind | `test_an_oversized_repository_is_refused_and_removed` — the error names the 1 MB limit and the destination no longer exists |
+| A disallowed transport never starts a process | `test_a_disallowed_transport_never_starts_a_process` — `ext::` refused, no destination created |
+| The clone is readable by the sandbox uid | `test_the_clone_is_world_readable` — ran on CI's Linux runner, where the mode bits mean something |
+| History is mined newest-first with per-file changes | `test_every_commit_is_mined_newest_first`, `test_commits_carry_their_per_file_changes` |
+| An unreadable history is distinguishable from an empty one | `test_a_failing_git_log_raises_rather_than_yielding_nothing` |
+| The pipeline persists files, commits and file changes | `test_a_full_run_records_files_commits_and_changes` |
+| A failed scan records why | `test_an_unreachable_repository_is_recorded_as_failed` |
+| Incomplete history is PARTIAL and self-describing | `test_unminable_history_is_partial_and_says_so` |
+| The clone does not outlive the scan | `test_the_clone_is_removed_whatever_happens` |
+| The migration runs both directions and matches the models | `test_upgrade_head_creates_every_table`, `test_migration_matches_the_models`, `test_downgrade_removes_every_table` |
+| `file_changes.file_id` is genuinely nullable in the database | `test_a_file_change_persists_without_a_file_row` |
 
-The 48 skips are the whole of the acceptance evidence for this phase, and they are why
-the table above is empty:
-
-- **PostgreSQL is absent on this machine.** Everything that proves the pipeline persists
-  anything skipped — the full-run test, the FAILED path, the PARTIAL path, the
-  `file_changes` round trip, both API integration tests, and every migration test.
-- **Docker is absent.** Unchanged from phase 2; C1 remains unverified locally.
-- The migration has **not been run in either direction** here. It is hand-written, because
-  autogenerate needs a live database to diff against.
-
-`CODESENTINEL_REQUIRE_INTEGRATION=1` converts **46 of the 48** into failures, confirming
-they are genuinely gated rather than quietly optional. The remaining two are
-`skipif os.name != "posix"` assertions about POSIX mode bits — the world-readable clone,
-and the sandbox's refusal of an unreadable tree. They are inapplicable on Windows rather
-than unverified, and they run on CI's Linux runners; deliberately, `REQUIRE_INTEGRATION`
-does not force those, because failing a test for running on the wrong platform would say
-nothing true.
-
-The git fixture is the one integration dependency this machine does have, so the cloner
-and history integration tests did run.
+Locally the same suite reports 162 passed and 54 skipped: this development machine has no
+Docker and no PostgreSQL. Local green was never sufficient, and the section below is why.
 
 ## Defects found during the phase
 
@@ -103,6 +93,38 @@ and history integration tests did run.
    `app.workers.tasks` in `imports`, so a worker never imports the module,
    `codesentinel.run_scan` is unregistered, and every dispatched scan sits in the queue
    unreceived — with the API returning 202 throughout.
+
+6. **UUID primary keys did not exist until flush — found by CI, and the worst defect of
+   the phase.** `UUIDPrimaryKeyMixin` documented its reason for existing as letting a
+   full object graph be built in memory and bulk-inserted in one round trip. It did not
+   do that: `default=uuid.uuid4` is a *Core* column default evaluated during INSERT, so
+   `instance.id` was `None` for exactly the window in which a graph gets assembled.
+
+   The visible symptom was four integration tests failing on `NotNullViolationError` for
+   `scans.repository_id`, because their setup reads `repository.id` before a flush. That
+   is a test bug, and it was **masking a product one**: `pipeline._persist_history` builds
+   `FileChange(commit_id=commit.id)` for every file a commit touched, with no flush in
+   between. Every one of those rows carried `commit_id=None`, `file_changes.commit_id` is
+   NOT NULL, and `_persist_history` catches broadly and returns the reason as a PARTIAL
+   status — so a real scan would have completed, reported PARTIAL, and **silently lost
+   its entire commit history and every per-file churn record**. That is the data this
+   phase added the table for and the data phase 4's ranking is built on.
+
+   Nothing local could have found it: the four tests failed in setup before reaching the
+   pipeline, so even in CI the pipeline path went unexercised until they were fixed, and
+   the whole `file_changes` feature was designed, migrated and shipped in a phase whose
+   integration tests could not run on the development machine. The mixin now assigns the
+   key in `__init__`, keeps the column default for paths that bypass it, and four
+   database-free unit tests pin the behaviour so the trap cannot return quietly.
+
+7. **A cleanup assertion that was checking the wrong directory.**
+   `test_the_clone_is_removed_whatever_happens` asserted `clone_root` was empty, but the
+   settings fixture pointed `clone_root` at `tmp_path` while the `git_repo` fixture built
+   its source repository in that same `tmp_path`. The leftover it tripped on was the
+   fixture, not a clone — the pipeline had removed its own tree correctly. Left alone it
+   would have failed in the other direction too: a future change that genuinely leaked a
+   clone would have been indistinguishable from the fixture being present, and the failure
+   message would have sent the next person after the wrong bug.
 
 ## Deviations from the approved plan
 

@@ -21,30 +21,30 @@ frontend.
 
 ## Acceptance
 
-**PENDING — no CI run exists for this branch.** Acceptance evidence must cite a run number
-with its pass/skip counts; this table stays empty until it can.
+All criteria met, in CI run **34587978470**: **216 tests passed, 0 skipped, 0 failed**.
 
-Locally:
+The `requires_docker` tests in this phase are the whole of its acceptance evidence, and
+they ran: `CODESENTINEL_REQUIRE_INTEGRATION=1` would have failed the build had the daemon
+or the image been missing.
 
-| Check | Result |
+| Criterion | Evidence |
 |---|---|
-| `ruff check` / `ruff format --check`, backend and sandbox | pass |
-| `mypy app/` (strict) | pass, 44 source files |
-| `pytest -rs` | **158 passed, 54 skipped** |
+| Radon actually runs inside the sandbox | `test_radon_measures_complexity_inside_the_sandbox` — measured against the real `codesentinel/analysis:ci` image under the full isolation set |
+| A branching function measures more complex than a straight-line one | Same test: `branchy.py` > `simple.py`, so the numbers mean what they claim |
+| A file Radon cannot parse is unknown, not simple | `test_an_unparseable_file_is_reported_as_unknown_not_as_simple` — absent from `values`, present in `errors` |
+| Churn decays: one half-life counts half | `test_a_change_one_half_life_old_counts_half` |
+| Recent churn outranks larger old churn | `test_recent_churn_outranks_larger_old_churn` |
+| An unchanged file scores 0.0; an all-binary history scores None | `test_a_file_that_never_changed_scores_zero`, `test_an_all_binary_history_is_unknown_not_zero` |
+| An unknown component yields an unknown risk, not a zero one | `test_an_unmeasured_complexity_yields_an_unknown_risk_not_a_zero_one` |
+| A `None` does not shift the normalisation scale | `test_unmeasured_files_do_not_shift_the_normalization_scale` |
+| The queue ranks by risk, descending | `test_files_are_ranked_by_risk_descending` — against real PostgreSQL |
+| An unmeasured file sorts last, not first | `test_an_unmeasured_file_sorts_last_rather_than_first` — `DESC NULLS LAST` verified in the query, not merely declared in the ORM |
+| The queue reports what it could not measure | `test_the_queue_reports_how_much_it_could_not_measure` |
 
-The six skips added by this phase are the ones that matter most to it:
+The previous revision of this file said Radon had never been executed. It has now.
 
-- **Radon has never been run.** Both `requires_docker` analysis tests skipped. Nothing
-  here has demonstrated that Radon is in the image, that it runs under the isolation set,
-  or that it emits the JSON shape the parser expects. The parser is thoroughly unit-tested
-  against shapes taken from Radon's documented output — which proves the parser is
-  self-consistent, **not** that it matches the tool.
-- **The metrics endpoint has never touched PostgreSQL.** `DESC NULLS LAST` ordering is
-  precisely the kind of thing that works in the ORM and not in the query, and it is
-  unverified here.
-
-This is the same position phase 2 was in, and ADR 0014 accepts it: CI is the acceptance
-authority for anything behind Docker or PostgreSQL.
+Locally the same suite reports 162 passed and 54 skipped, because this machine has neither
+Docker nor PostgreSQL. That remains the correct local result, and CI remains the authority.
 
 ## The decision this phase had to make
 
