@@ -60,8 +60,24 @@ py -3.11 -m venv .venv
 ```
 
 Tests that need PostgreSQL are marked `requires_db` and skip with an explicit reason when
-`CODESENTINEL_TEST_DATABASE_URL` is unset or unreachable. They are never silently passed,
-and SQLite is never substituted.
+`CODESENTINEL_TEST_DATABASE_URL` is set in neither the environment nor `backend/.env`.
+They are never silently passed, and SQLite is never substituted: the schema uses JSONB, an
+expression index with `NULLS LAST`, and asyncpg semantics, so a SQLite run would prove
+nothing while looking green.
+
+A skipped test is an unverified one, so it is worth having a real database locally. On
+Windows without Docker, `scripts/local-postgres.ps1` runs one as a plain user-owned
+process — no service, no admin rights, and the same PostgreSQL 15 the compose stack uses,
+because a cascade behaving differently between the two would defeat the point:
+
+```
+powershell -File scripts/local-postgres.ps1 -Action start   # also: status, stop, psql
+```
+
+Point `backend/.env` at it (see `.env.example`) and the 48 `requires_db` tests run instead
+of skipping. What remains skipped without a Docker daemon is the sandbox suite — which is
+constraint C1, so a local run leaves container isolation unverified and CI is the
+acceptance authority for it.
 
 ## Frontend
 

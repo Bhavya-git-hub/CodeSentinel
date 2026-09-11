@@ -93,12 +93,27 @@ async def client(app) -> AsyncIterator[AsyncClient]:  # type: ignore[no-untyped-
 
 
 def _test_database_url() -> str:
-    """Return the test database URL or skip the test, saying exactly why."""
+    """Return the test database URL or skip the test, saying exactly why.
+
+    Checks the environment first, then ``.env`` through ``Settings`` -- the same file and
+    the same variable name the application itself reads, and the one ``.env.example``
+    documents. Before this, a developer could follow ``.env.example`` exactly, put
+    ``CODESENTINEL_TEST_DATABASE_URL`` in ``.env``, and still watch every database test
+    skip, because this function looked only at ``os.environ``. The skip reason named the
+    variable, which made it look like the value was missing rather than unread.
+
+    The environment still wins, so CI -- which exports it explicitly -- is unaffected, and
+    a one-off run against a different database does not require editing a file.
+    """
     url = os.environ.get(TEST_DB_ENV_VAR)
     if not url:
+        configured = Settings().test_database_url
+        url = str(configured) if configured else None
+    if not url:
         _unavailable(
-            f"{TEST_DB_ENV_VAR} is not set, so no PostgreSQL instance is available. "
-            "This test did not run; it was not verified."
+            f"{TEST_DB_ENV_VAR} is set neither in the environment nor in backend/.env, "
+            "so no PostgreSQL instance is available. This test did not run; it was not "
+            "verified."
         )
     return url
 

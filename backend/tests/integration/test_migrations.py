@@ -7,7 +7,6 @@ reason rather than passing -- see tests/conftest.py.
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any
 
 import pytest
@@ -17,7 +16,7 @@ from sqlalchemy import Connection, inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.models import Base
-from tests.conftest import TEST_DB_ENV_VAR, _run_migrations
+from tests.conftest import _run_migrations, _test_database_url
 
 pytestmark = pytest.mark.requires_db
 
@@ -95,8 +94,13 @@ async def test_downgrade_removes_every_table(db_engine: AsyncEngine) -> None:
 
     Depends on db_engine so it skips with the shared reason when no database is
     reachable, rather than failing on a missing environment variable.
+
+    Resolved through conftest rather than read from os.environ, which is what this
+    docstring already claimed and the code did not: the URL may come from .env, and
+    reading the environment directly turned "configured somewhere else" into a KeyError
+    -- a hard failure in the one test whose whole subject is recoverability.
     """
-    url = os.environ[TEST_DB_ENV_VAR]
+    url = _test_database_url()
     await db_engine.dispose()
     await asyncio.to_thread(_run_migrations, url, "base", downgrade=True)
     try:
