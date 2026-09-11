@@ -24,6 +24,7 @@ from app.models.code import File
 from app.models.enums import ScanStatus
 from app.models.history import Commit, FileChange
 from app.models.repository import Repository, Scan
+from app.services.analyzers.analysis import ANALYZER_NAME, run_analysis
 from app.services.ingestion.cloner import clone_repository, remove_tree
 from app.services.ingestion.errors import IngestionError
 from app.services.ingestion.history import mine_history
@@ -34,15 +35,19 @@ logger = structlog.get_logger(__name__)
 COMMIT_BATCH_SIZE = 500
 
 
-def classify_outcome(*, history_error: str | None) -> ScanStatus:
+def classify_outcome(*, history_error: str | None, analysis_error: str | None = None) -> ScanStatus:
     """The terminal status for a run whose clone and inventory both succeeded.
 
     PARTIAL rather than FAILED when history is incomplete: the file inventory still
     supports phase 6's dependency graph, so discarding it would throw away usable work.
     PARTIAL rather than SUCCEEDED because phase 4 would otherwise compute churn over a
     truncated history and present the result as complete.
+
+    The same reasoning covers analysis. A scan whose complexity could not be measured
+    still has churn, and churn alone ranks something; reporting it as SUCCEEDED would
+    present a churn-only ordering as the full risk model.
     """
-    return ScanStatus.PARTIAL if history_error else ScanStatus.SUCCEEDED
+    return ScanStatus.PARTIAL if (history_error or analysis_error) else ScanStatus.SUCCEEDED
 
 
 async def run_ingestion(session: AsyncSession, scan_id: uuid.UUID, *, settings: Settings) -> None:
@@ -81,12 +86,28 @@ async def run_ingestion(session: AsyncSession, scan_id: uuid.UUID, *, settings: 
             # implicit lazy IO, which raises MissingGreenlet under asyncio.
             await session.refresh(scan)
 
-        scan.status = classify_outcome(history_error=history_error)
+        # Analysis runs here, before the finally deletes the clone. Radon reads the
+        # working tree, and there is no second chance: a later stage would have to clone
+        # the repository again.
+        analysis_error = await run_analysis(
+            session,
+            scan_id=scan.id,
+            repository_id=repository.id,
+            clone_path=clone_path,
+            files_by_path=files_by_path,
+            # The scan's own start, not "now", so churn is reproducible on re-read (C5).
+            as_of=scan.started_at,
+            settings=settings,
+        )
+
+        scan.status = classify_outcome(history_error=history_error, analysis_error=analysis_error)
+        statuses = dict(scan.analyzer_statuses)
         if history_error:
-            scan.analyzer_statuses = {
-                **scan.analyzer_statuses,
-                "ingestion": {"status": "partial", "error": history_error},
-            }
+            statuses["ingestion"] = {"status": "partial", "error": history_error}
+        if analysis_error:
+            statuses[ANALYZER_NAME] = {"status": "partial", "error": analysis_error}
+        if statuses != scan.analyzer_statuses:
+            scan.analyzer_statuses = statuses
         scan.completed_at = datetime.now(UTC)
         await session.commit()
         logger.info("scan.done", scan_id=str(scan_id), status=scan.status)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -38,3 +39,32 @@ class ScanDetail(BaseModel):
     commit_count: int
     started_at: datetime
     completed_at: datetime | None
+
+
+class FileRisk(BaseModel):
+    """One file's place in the review queue, with the components that put it there."""
+
+    path: str
+    is_test: bool
+    loc: int | None
+    cyclomatic_complexity: float | None
+    maintainability_index: float | None
+    churn_score: float | None
+    normalized_complexity: float | None
+    normalized_churn: float | None
+    risk_score: float | None
+
+
+class RiskQueue(BaseModel):
+    """A scan's risk-ranked files.
+
+    ``unmeasured`` is part of the contract, not a footnote. A queue built from half a
+    repository has to say so, or a short list reads as a clean bill of health (C3).
+    """
+
+    scan_id: uuid.UUID
+    status: ScanStatus
+    total_files: int
+    unmeasured: int
+    analyzer_statuses: dict[str, Any]
+    files: list[FileRisk]
