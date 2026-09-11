@@ -20,8 +20,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.models.code import FileMetric
+from app.models.code import FileMetric, Finding
+from app.models.enums import AnalyzerStatus
 from app.models.history import Commit, FileChange
+from app.services.analyzers import coverage as coverage_analyzer
+from app.services.analyzers import findings as findings_analyzer
 from app.services.analyzers import radon
 from app.services.mining.churn import ChangeWeight, churn_score
 from app.services.sandbox.errors import SandboxError
@@ -112,15 +115,24 @@ async def run_analysis(
 
     complexity = radon.MetricResult()
     maintainability = radon.MetricResult()
+    pylint_result = findings_analyzer.FindingsResult(findings_analyzer.PYLINT, [])
+    bandit_result = findings_analyzer.FindingsResult(findings_analyzer.BANDIT, [])
+    coverage_result = coverage_analyzer.CoverageResult(status=AnalyzerStatus.SKIPPED)
     analyzer_error: str | None = None
 
     try:
         with Sandbox(settings, source_dir=clone_path) as sandbox:
             complexity, maintainability = radon.measure(sandbox, settings)
+            pylint_result = findings_analyzer.run_pylint(sandbox)
+            bandit_result = findings_analyzer.run_bandit(sandbox)
+            coverage_result = coverage_analyzer.run_coverage(sandbox)
     except SandboxError as exc:
         # Recorded, never swallowed: without this the scan would persist churn-only
         # metrics and look like a repository whose code is uniformly simple.
-        analyzer_error = f"Radon could not run in the sandbox: {exc}"
+        analyzer_error = f"the sandbox was unavailable: {exc}"
+        coverage_result = coverage_analyzer.CoverageResult(
+            status=AnalyzerStatus.SKIPPED, error=analyzer_error
+        )
         logger.warning("analysis.sandbox_unavailable", scan_id=str(scan_id), error=str(exc))
 
     if complexity.tool_error:
@@ -147,11 +159,21 @@ async def run_analysis(
                 normalized_complexity=scores[path].normalized_complexity,
                 normalized_churn=scores[path].normalized_churn,
                 risk_score=scores[path].risk_score,
+                # Absent from the coverage report means unmeasured, which stays None.
+                # A file the suite never reached is not a file at 0% (anti-pattern #2).
+                coverage_pct=coverage_result.percentages.get(path),
             )
             for path in inputs
         ]
     )
     await session.commit()
+
+    await _persist_findings(
+        session,
+        scan_id=scan_id,
+        files_by_path=files_by_path,
+        results=[pylint_result, bandit_result],
+    )
 
     unmeasured = sum(1 for score in scores.values() if score.risk_score is None)
     logger.info(
@@ -162,8 +184,16 @@ async def run_analysis(
         analyzer_error=analyzer_error,
     )
 
+    reasons = [
+        result.error for result in (pylint_result, bandit_result) if result.error is not None
+    ]
+    if coverage_result.status is not AnalyzerStatus.SUCCESS and coverage_result.error:
+        reasons.append(f"coverage was skipped: {coverage_result.error}")
+
     if analyzer_error:
-        return analyzer_error
+        reasons.insert(0, analyzer_error)
+    if reasons:
+        return " | ".join(reasons)
     if complexity.errors:
         # A per-file parse failure is not a tool failure, but it does mean the queue was
         # built from part of the repository, and the scan has to say which part.
@@ -173,3 +203,38 @@ async def run_analysis(
             f"(for example: {sample}). Those files are ranked as unknown, not as safe."
         )
     return None
+
+
+async def _persist_findings(
+    session: AsyncSession,
+    *,
+    scan_id: uuid.UUID,
+    files_by_path: dict[str, uuid.UUID],
+    results: list[findings_analyzer.FindingsResult],
+) -> None:
+    """Write findings, keeping the ones we cannot attribute to a file.
+
+    ``file_id`` is nullable, so a finding about a path not in the inventory -- a file
+    outside the walked tree, or one an analyser named differently -- is still recorded
+    rather than dropped. Discarding it would quietly shrink the report, and the reader
+    would have no way to know (C4).
+    """
+    rows = [
+        Finding(
+            scan_id=scan_id,
+            file_id=files_by_path.get(record.path) if record.path else None,
+            analyzer=record.analyzer,
+            rule_id=record.rule_id,
+            severity=record.severity,
+            line_start=record.line_start,
+            line_end=record.line_end,
+            message=record.message,
+        )
+        for result in results
+        for record in result.findings
+    ]
+    if not rows:
+        return
+    session.add_all(rows)
+    await session.commit()
+    logger.info("analysis.findings_persisted", scan_id=str(scan_id), count=len(rows))

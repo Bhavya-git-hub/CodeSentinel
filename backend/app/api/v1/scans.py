@@ -11,15 +11,23 @@ import uuid
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import SessionDep, SettingsDep
-from app.models.code import File, FileMetric
-from app.models.enums import ScanStatus
+from app.models.code import File, FileMetric, Finding
+from app.models.enums import ScanStatus, Severity
 from app.models.history import Commit
 from app.models.repository import Repository, Scan
-from app.schemas.scan import FileRisk, RiskQueue, ScanAccepted, ScanDetail, ScanRequest
+from app.schemas.scan import (
+    FileRisk,
+    FindingItem,
+    FindingsPage,
+    RiskQueue,
+    ScanAccepted,
+    ScanDetail,
+    ScanRequest,
+)
 from app.services.ingestion.errors import UnsafeRepositoryUrlError
 from app.services.ingestion.url import repository_name_from_url, validate_repository_url
 
@@ -148,6 +156,7 @@ async def get_scan_metrics(
                 normalized_complexity=metric.normalized_complexity,
                 normalized_churn=metric.normalized_churn,
                 risk_score=metric.risk_score,
+                coverage_pct=metric.coverage_pct,
             )
             for metric, file in rows
         ],
@@ -163,3 +172,70 @@ async def _count_metrics(
         query = query.where(FileMetric.risk_score.is_(None))
     result = await session.execute(query)
     return int(result.scalar_one())
+
+
+@router.get("/{scan_id}/findings", response_model=FindingsPage)
+async def get_scan_findings(
+    scan_id: uuid.UUID,
+    session: SessionDep,
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> FindingsPage:
+    """Every issue this scan recorded, worst first.
+
+    Ordered by severity descending so the queue opens on what matters. The per-severity
+    counts are computed over the whole scan rather than over the returned page, because a
+    truncated page's counts would understate the problem it is reporting.
+    """
+    scan = await session.get(Scan, scan_id)
+    if scan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"No scan with id {scan_id}")
+
+    severity_order = case(
+        {
+            Severity.CRITICAL: 4,
+            Severity.MAJOR: 3,
+            Severity.MINOR: 2,
+            Severity.INFO: 1,
+        },
+        value=Finding.severity,
+        else_=0,
+    )
+
+    rows = (
+        await session.execute(
+            select(Finding, File.path)
+            .outerjoin(File, File.id == Finding.file_id)
+            .where(Finding.scan_id == scan_id)
+            .order_by(severity_order.desc(), Finding.analyzer, Finding.rule_id)
+            .limit(limit)
+        )
+    ).all()
+
+    counts = (
+        await session.execute(
+            select(Finding.severity, func.count())
+            .where(Finding.scan_id == scan_id)
+            .group_by(Finding.severity)
+        )
+    ).all()
+    by_severity = {str(severity.value): int(count) for severity, count in counts}
+
+    return FindingsPage(
+        scan_id=scan_id,
+        status=scan.status,
+        total=sum(by_severity.values()),
+        by_severity=by_severity,
+        analyzer_statuses=scan.analyzer_statuses,
+        findings=[
+            FindingItem(
+                analyzer=finding.analyzer,
+                rule_id=finding.rule_id,
+                severity=finding.severity,
+                message=finding.message,
+                path=path,
+                line_start=finding.line_start,
+                line_end=finding.line_end,
+            )
+            for finding, path in rows
+        ],
+    )

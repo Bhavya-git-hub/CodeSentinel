@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import ScanStatus
+from app.models.enums import ScanStatus, Severity
 
 
 class ScanRequest(BaseModel):
@@ -53,6 +53,8 @@ class FileRisk(BaseModel):
     normalized_complexity: float | None
     normalized_churn: float | None
     risk_score: float | None
+    #: Null means coverage was not measured for this file, not that it is untested.
+    coverage_pct: float | None
 
 
 class RiskQueue(BaseModel):
@@ -68,3 +70,35 @@ class RiskQueue(BaseModel):
     unmeasured: int
     analyzer_statuses: dict[str, Any]
     files: list[FileRisk]
+
+
+class FindingItem(BaseModel):
+    """One issue, on the single normalised severity scale.
+
+    ``path`` is null for a finding the analyser could not attribute to a file in the
+    inventory. Those are kept rather than dropped, so the count is honest (C4).
+    """
+
+    analyzer: str
+    rule_id: str
+    severity: Severity
+    message: str
+    path: str | None
+    line_start: int | None
+    line_end: int | None
+
+
+class FindingsPage(BaseModel):
+    """A scan's findings, with the analyser outcomes that produced them.
+
+    ``analyzer_statuses`` travels with the list because an empty list from an analyser
+    that ran and an empty list from one that never ran are different facts, and only the
+    statuses tell them apart (C3).
+    """
+
+    scan_id: uuid.UUID
+    status: ScanStatus
+    total: int
+    by_severity: dict[str, int]
+    analyzer_statuses: dict[str, Any]
+    findings: list[FindingItem]

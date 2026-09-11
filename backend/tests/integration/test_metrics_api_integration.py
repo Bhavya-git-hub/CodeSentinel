@@ -102,3 +102,65 @@ async def test_the_queue_reports_how_much_it_could_not_measure(
 async def test_metrics_for_an_unknown_scan_are_a_404(client: AsyncClient) -> None:
     response = await client.get("/api/v1/scans/00000000-0000-0000-0000-000000000000/metrics")
     assert response.status_code == 404
+
+
+async def test_findings_are_returned_worst_first_with_whole_scan_counts(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Severity ordering and counts over the whole scan, not the returned page.
+
+    A truncated page whose counts described only itself would understate the problem it
+    is reporting.
+    """
+    from app.models.code import Finding
+    from app.models.enums import Severity
+
+    scan = await _scan_with_metrics(db_session)
+    for severity, rule in [
+        (Severity.INFO, "C0114"),
+        (Severity.CRITICAL, "B602"),
+        (Severity.MINOR, "W0612"),
+    ]:
+        db_session.add(
+            Finding(
+                scan_id=scan.id,
+                file_id=None,
+                analyzer="pylint",
+                rule_id=rule,
+                severity=severity,
+                message=f"{rule} message",
+            )
+        )
+    await db_session.flush()
+
+    body = (await client.get(f"/api/v1/scans/{scan.id}/findings")).json()
+
+    assert [f["rule_id"] for f in body["findings"]] == ["B602", "W0612", "C0114"]
+    assert body["total"] == 3
+    assert body["by_severity"]["critical"] == 1
+
+
+async def test_a_finding_with_no_file_is_still_returned(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """file_id is nullable so an unattributable finding is recorded, not dropped (C4)."""
+    from app.models.code import Finding
+    from app.models.enums import Severity
+
+    scan = await _scan_with_metrics(db_session)
+    db_session.add(
+        Finding(
+            scan_id=scan.id,
+            file_id=None,
+            analyzer="bandit",
+            rule_id="B101",
+            severity=Severity.MAJOR,
+            message="project-level finding",
+        )
+    )
+    await db_session.flush()
+
+    body = (await client.get(f"/api/v1/scans/{scan.id}/findings")).json()
+
+    assert body["findings"][0]["path"] is None
+    assert body["total"] == 1
