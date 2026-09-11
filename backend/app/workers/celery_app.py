@@ -18,10 +18,13 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+import structlog
 from celery import Celery
 from celery.signals import worker_init
 
 from app.config import Settings, get_settings
+
+logger = structlog.get_logger(__name__)
 
 
 def create_celery_app() -> Celery:
@@ -120,6 +123,12 @@ def check_clone_root(**_kwargs: Any) -> None:
         # not turn a successful check into a refusal to start.
         with contextlib.suppress(OSError):
             probe.unlink()
+
+    # Logged on success, not only on failure. A guard that is silent when it passes cannot
+    # be distinguished from a guard that never ran -- and this one is wired through a
+    # signal, so "never ran" is a single missing import away and would look exactly like a
+    # healthy worker.
+    logger.info("worker.clone_root_writable", clone_root=str(root))
 
 
 celery_app = create_celery_app()

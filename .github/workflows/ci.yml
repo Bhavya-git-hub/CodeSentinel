@@ -405,6 +405,21 @@ jobs:
             docker compose $COMPOSE up -d --build --wait --wait-timeout 420
           docker compose $COMPOSE ps
 
+      - name: The start-up guards actually ran
+        # Both guards are silent when they pass, so a guard that never ran looks exactly
+        # like one that passed. The proxy's is proved by the stack being up at all -- it
+        # exits if it cannot open the socket. The worker's announces itself, and this is
+        # the only thing that distinguishes "checked and fine" from "never wired".
+        run: |
+          set -euo pipefail
+          logs="$(docker compose $COMPOSE logs --no-color worker)"
+          echo "$logs" | grep -c "worker.clone_root_writable" \
+            || { echo "no worker verified its clone root at start-up" >&2; exit 1; }
+          echo "$logs" | grep "worker.clone_root_writable" | head -2
+          docker compose $COMPOSE logs --no-color docker-proxy | grep -q "socket_proxy.start" \
+            || { echo "the proxy never reported a usable socket" >&2; exit 1; }
+          echo "proxy reported a usable socket"
+
       - name: Both API and worker replicas are actually running
         # `replicas: 2` and a published port are mutually exclusive, and nothing caught
         # that while these files were only ever validated rather than started.

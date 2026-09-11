@@ -142,3 +142,28 @@ def test_the_probe_file_is_not_left_behind(tmp_path: Path, monkeypatch: pytest.M
     check_clone_root()
 
     assert list(root.iterdir()) == []
+
+
+def test_the_guard_is_actually_wired_to_worker_start() -> None:
+    """The function being correct is worth nothing if the signal never calls it.
+
+    Every other test here invokes check_clone_root directly, so all of them would keep
+    passing if the decorator were dropped -- and a worker with no guard looks exactly like
+    a worker whose guard passed. This asserts the connection itself.
+    """
+    import weakref
+
+    from celery.signals import worker_init
+
+    connected = set()
+    for receiver in worker_init.receivers:
+        target = receiver[1] if isinstance(receiver, tuple) else receiver
+        if isinstance(target, weakref.ref):
+            target = target()
+        name = getattr(target, "__name__", None)
+        if name:
+            connected.add(name)
+
+    assert "check_clone_root" in connected, (
+        f"the clone-root guard is not connected to worker_init; connected: {connected}"
+    )
