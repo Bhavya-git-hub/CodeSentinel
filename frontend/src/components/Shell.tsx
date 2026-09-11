@@ -15,8 +15,9 @@ export function DemoBanner({ isDemo }: { isDemo: boolean }) {
   if (!isDemo) return null;
   return (
     <div className="demo" role="status">
-      Showing sample data from CodeSentinel&rsquo;s own repository. Nothing here was
-      scanned just now.
+      Sample data: a real scan of <strong>encode/starlette</strong> &mdash; 150 files,
+      1,665 commits &mdash; run without a Docker daemon, so complexity and coverage are
+      genuinely unmeasured. Nothing here was scanned just now.
     </div>
   );
 }

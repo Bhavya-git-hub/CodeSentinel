@@ -18,97 +18,57 @@ import type {
  * truth about itself, and demo mode demonstrates the unknown state rather than hiding it.
  */
 
-const MEASURED: ReadonlyArray<readonly [string, number, number, number]> = [
-  ["backend/app/services/sandbox/runner.py", 433, 433.1, 1.0],
-  ["backend/app/services/ingestion/cloner.py", 328, 328.0, 0.757],
-  ["backend/app/services/ingestion/history.py", 239, 239.0, 0.552],
-  ["backend/app/services/ingestion/pipeline.py", 195, 209.0, 0.483],
-  ["backend/app/services/analyzers/analysis.py", 175, 175.0, 0.404],
-  ["backend/app/api/v1/scans.py", 165, 171.0, 0.395],
-  ["backend/app/services/analyzers/radon.py", 170, 170.0, 0.393],
-  ["backend/app/config.py", 151, 158.4, 0.366],
-  ["backend/app/models/code.py", 159, 158.3, 0.365],
-  ["backend/app/services/ingestion/inventory.py", 152, 152.0, 0.351],
-  ["backend/app/models/history.py", 136, 135.5, 0.313],
-  ["backend/app/services/scoring/risk.py", 98, 98.0, 0.226],
-  ["backend/app/services/mining/churn.py", 84, 84.0, 0.194],
-  ["backend/app/services/ingestion/url.py", 78, 78.0, 0.18],
-  ["backend/app/models/base.py", 62, 71.0, 0.164],
-  ["backend/app/db.py", 61, 64.0, 0.148],
-  ["backend/app/services/ingestion/errors.py", 41, 41.0, 0.095],
-  ["backend/app/main.py", 88, 38.0, 0.088],
-  ["backend/app/models/repository.py", 82, 34.0, 0.079],
-  ["backend/app/schemas/scan.py", 72, 31.0, 0.072],
-];
+import realScan from "./real-scan.json";
 
-const DEMO_SCAN_ID = "3f7c1a90-4d2b-4c11-9d8e-2a6f5b0c7e41";
+/**
+ * The payload is a real scan, produced by running the shipped services against
+ * encode/starlette: 150 files, 1,665 commits, 1,311 import edges, 138 bug-fix commits.
+ *
+ * Complexity and coverage are null throughout because Radon and the test suite need a
+ * Docker daemon, and the machine that produced this had none. That absence is kept rather
+ * than filled in -- it is the state the interface exists to render honestly, and a demo
+ * that quietly showed complexity numbers nobody measured would be the exact failure this
+ * product is built to prevent.
+ */
+const scan: ScanDetail = realScan.scan as ScanDetail;
+const queue: RiskQueue = realScan.queue as RiskQueue;
+const impact: BlastRadius = realScan.impact as BlastRadius;
+const report: ScanReport = realScan.report as ScanReport;
+const files: FileRisk[] = queue.files;
 
-const files: FileRisk[] = MEASURED.map(([path, loc, churn, normalizedChurn]) => ({
-  path,
-  is_test: path.includes("/tests/"),
-  loc,
-  // Radon did not run: unknown, not zero. This is what the UI must render as `None`.
-  cyclomatic_complexity: null,
-  maintainability_index: null,
-  churn_score: churn,
-  normalized_complexity: null,
-  normalized_churn: normalizedChurn,
-  risk_score: null,
-}));
+const DEMO_SCAN_ID = scan.scan_id;
 
-const scan: ScanDetail = {
-  scan_id: DEMO_SCAN_ID,
-  status: "partial",
-  commit_sha: "3c5ad571f0e2b8a94c6d1e7f2a8b5c3d9e0f4a16",
-  error: null,
-  file_count: 44,
-  commit_count: 39,
-  started_at: "2026-09-11T10:03:13Z",
-  completed_at: "2026-09-11T10:03:58Z",
-};
 
-const queue: RiskQueue = {
-  scan_id: DEMO_SCAN_ID,
-  status: "partial",
-  total_files: 44,
-  unmeasured: 44,
-  analyzer_statuses: {
-    radon: {
-      status: "partial",
-      error: "Radon could not run in the sandbox: no Docker daemon is reachable.",
-    },
-  },
-  files,
-};
-
+/**
+ * The one part of this payload that is not measured.
+ *
+ * Pylint and Bandit run in the sandbox, so no real finding set could be produced without
+ * a Docker daemon. These are illustrative, the shape is the API's own, and the banner
+ * says the whole page is sample data.
+ */
 const findings: FindingsPage = {
   scan_id: DEMO_SCAN_ID,
   status: "partial",
   total: 5,
   by_severity: { critical: 1, major: 2, minor: 1, info: 1 },
-  analyzer_statuses: {
-    radon: {
-      status: "partial",
-      error: "Radon could not run in the sandbox: no Docker daemon is reachable.",
-    },
-  },
+  analyzer_statuses: queue.analyzer_statuses,
   findings: [
     {
       analyzer: "bandit",
       rule_id: "B602",
       severity: "critical",
       message: "subprocess call with shell=True identified, security issue [confidence: high]",
-      path: "backend/app/services/ingestion/cloner.py",
-      line_start: 154,
+      path: "starlette/_utils.py",
+      line_start: 54,
       line_end: null,
     },
     {
       analyzer: "pylint",
       rule_id: "E1101",
       severity: "major",
-      message: "Instance of 'Popen' has no 'stdout' member",
-      path: "backend/app/services/ingestion/cloner.py",
-      line_start: 210,
+      message: "Instance of 'Request' has no 'scope' member",
+      path: "starlette/requests.py",
+      line_start: 128,
       line_end: null,
     },
     {
@@ -116,22 +76,22 @@ const findings: FindingsPage = {
       rule_id: "W0718",
       severity: "major",
       message: "Catching too general exception Exception",
-      path: "backend/app/services/ingestion/pipeline.py",
-      line_start: 168,
+      path: "starlette/middleware/errors.py",
+      line_start: 171,
       line_end: null,
     },
     {
       analyzer: "pylint",
       rule_id: "W0612",
       severity: "minor",
-      message: "Unused variable 'maintainability'",
-      path: "backend/app/services/analyzers/analysis.py",
-      line_start: 116,
+      message: "Unused variable 'exc_type'",
+      path: "starlette/exceptions.py",
+      line_start: 44,
       line_end: null,
     },
     {
-      // A finding the analyser could not attribute to a file in the inventory. Kept
-      // rather than dropped, so the count is honest (C4).
+      // Kept rather than dropped: the analyser could not attribute it to a file in the
+      // inventory, and omitting it would shrink the count (C4).
       analyzer: "bandit",
       rule_id: "B101",
       severity: "info",
@@ -143,87 +103,11 @@ const findings: FindingsPage = {
   ],
 };
 
-const impact: BlastRadius = {
-  scan_id: DEMO_SCAN_ID,
-  path: "backend/app/services/sandbox/runner.py",
-  depth: 3,
-  impacted: [
-    { path: "backend/app/services/analyzers/radon.py", distance: 1, risk_score: null },
-    { path: "backend/app/services/analyzers/analysis.py", distance: 1, risk_score: null },
-    { path: "backend/app/services/ingestion/pipeline.py", distance: 2, risk_score: null },
-    { path: "backend/app/workers/tasks.py", distance: 3, risk_score: null },
-  ],
-  resolved_edges: 61,
-  unresolved_edges: 48,
-};
-
-const report: ScanReport = {
-  scan_id: DEMO_SCAN_ID,
-  status: "partial",
-  commit_sha: "3c5ad571f0e2b8a94c6d1e7f2a8b5c3d9e0f4a16",
-  started_at: "2026-09-11T10:03:13Z",
-  completed_at: "2026-09-11T10:03:58Z",
-  file_count: 44,
-  commit_count: 39,
-  files_ranked: 0,
-  files_unmeasured: 44,
-  findings_total: 5,
-  findings_by_severity: { critical: 1, major: 2, minor: 1, info: 1 },
-  dependency_edges: 109,
-  dependency_edges_unresolved: 48,
-  coverage_measured_files: 0,
-  top_risks: files.slice(0, 8),
-  commits_labelled: 0,
-  commits_defect_inducing: 0,
-  top_defect_risks: [],
-  limitations: [
-    {
-      subject: "Unranked files",
-      detail: "44 of 44 files have no risk score.",
-      consequence:
-        "They are unknown, not safe. They sort last in the queue, so a file that could " +
-        "not be parsed will not appear near the top even if it is the worst in the " +
-        "repository.",
-    },
-    {
-      subject: "Unresolved imports",
-      detail: "48 import edges could not be resolved to a file.",
-      consequence:
-        "Third-party imports, dynamic imports and relative imports above the repository " +
-        "root cannot be followed, so every blast radius here is a floor rather than a " +
-        "ceiling.",
-    },
-    {
-      subject: "Coverage",
-      detail: "No file has coverage data.",
-      consequence:
-        "The sandbox has no network, so a target whose tests need third-party packages " +
-        "cannot run them. No file here is known to be untested; they are unmeasured, " +
-        "which is a different thing.",
-    },
-    {
-      subject: "Defect prediction",
-      detail: "No commit carries a modelled defect probability.",
-      consequence:
-        "SZZ labels only the commits it can reach, and a probability computed over a " +
-        "handful of them is noise. An empty list here means the model declined, not " +
-        "that no commit is risky.",
-    },
-  ],
-  config: {
-    churn_half_life_days: 90,
-    max_repo_size_mb: 1024,
-    clone_allowed_protocols: ["https"],
-    analysis_enabled: true,
-  },
-  analyzer_statuses: queue.analyzer_statuses,
-};
-
 export const DEMO_SCAN = DEMO_SCAN_ID;
 
 /** The rows the landing hero renders, with the repository prefix trimmed for width. */
 export const HERO_ROWS = files.slice(0, 6).map((file) => ({
-  path: file.path.replace("backend/app/", ""),
+  path: file.path,
   churn: file.churn_score,
   weight: file.normalized_churn,
 }));

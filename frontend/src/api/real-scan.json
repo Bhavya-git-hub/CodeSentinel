@@ -1,0 +1,637 @@
+{
+  "meta": {
+    "url": "https://github.com/encode/starlette",
+    "files": 150,
+    "commits": 1665,
+    "seconds": 50.3,
+    "edges": 1311,
+    "resolved": 723,
+    "fixes": 138,
+    "inducing": 165,
+    "predictions": 1664,
+    "truncated": false
+  },
+  "scan": {
+    "scan_id": "8c2e41b7-59da-4f3e-a0d6-71b4e9c8a250",
+    "status": "partial",
+    "commit_sha": "f03f65c2f98c592773d691b4d309c68b83e568ef",
+    "error": null,
+    "file_count": 150,
+    "commit_count": 1665,
+    "started_at": "2026-09-11T14:35:06.948797+00:00",
+    "completed_at": "2026-09-11T14:35:57.244788+00:00"
+  },
+  "queue": {
+    "scan_id": "8c2e41b7-59da-4f3e-a0d6-71b4e9c8a250",
+    "status": "partial",
+    "total_files": 150,
+    "unmeasured": 150,
+    "analyzer_statuses": {
+      "radon": {
+        "status": "partial",
+        "error": "Radon could not run in the sandbox: no Docker daemon is reachable."
+      }
+    },
+    "files": [
+      {
+        "path": "uv.lock",
+        "is_test": false,
+        "loc": 1848,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 2519.577293764586,
+        "normalized_complexity": null,
+        "normalized_churn": 1.0,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/middleware/test_opentelemetry.py",
+        "is_test": true,
+        "loc": 548,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 481.1356445197314,
+        "normalized_complexity": null,
+        "normalized_churn": 0.19095887461378502,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "starlette/middleware/opentelemetry.py",
+        "is_test": false,
+        "loc": 123,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 364.4253243529637,
+        "normalized_complexity": null,
+        "normalized_churn": 0.1446374855237973,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/gzip_benchmark.py",
+        "is_test": false,
+        "loc": 316,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 353.93584088484573,
+        "normalized_complexity": null,
+        "normalized_churn": 0.14047429374790807,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/middleware/test_body_limit.py",
+        "is_test": true,
+        "loc": 368,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 283.45022873414865,
+        "normalized_complexity": null,
+        "normalized_churn": 0.11249912016417485,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "starlette/testclient.py",
+        "is_test": false,
+        "loc": 552,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 244.43997088783695,
+        "normalized_complexity": null,
+        "normalized_churn": 0.09701626201060531,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/multipart_benchmark.py",
+        "is_test": false,
+        "loc": 210,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 196.92264930813351,
+        "normalized_complexity": null,
+        "normalized_churn": 0.07815701855842044,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/test_formparsers.py",
+        "is_test": true,
+        "loc": 1077,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 193.01659856039524,
+        "normalized_complexity": null,
+        "normalized_churn": 0.07660673837554814,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/middleware/test_gzip.py",
+        "is_test": true,
+        "loc": 426,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 176.54304472626941,
+        "normalized_complexity": null,
+        "normalized_churn": 0.07006851711323785,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/README.md",
+        "is_test": false,
+        "loc": 190,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 166.78877155033322,
+        "normalized_complexity": null,
+        "normalized_churn": 0.06619712439983472,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "starlette/middleware/gzip.py",
+        "is_test": false,
+        "loc": 222,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 141.08525384231572,
+        "normalized_complexity": null,
+        "normalized_churn": 0.055995604576796074,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "docs/middleware.md",
+        "is_test": false,
+        "loc": 1018,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 133.7000413887733,
+        "normalized_complexity": null,
+        "normalized_churn": 0.053064473044606424,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/json_benchmark.py",
+        "is_test": false,
+        "loc": 156,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 133.6045373223035,
+        "normalized_complexity": null,
+        "normalized_churn": 0.05302656824735884,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/request_benchmark.py",
+        "is_test": false,
+        "loc": 116,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 131.79389441092746,
+        "normalized_complexity": null,
+        "normalized_churn": 0.05230793861219861,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "docs/release-notes.md",
+        "is_test": false,
+        "loc": 1431,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 128.51073754331406,
+        "normalized_complexity": null,
+        "normalized_churn": 0.051004880009575655,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/routing_benchmark.py",
+        "is_test": false,
+        "loc": 71,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 128.38596617417403,
+        "normalized_complexity": null,
+        "normalized_churn": 0.05095535925486461,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/urlencoded_benchmark.py",
+        "is_test": false,
+        "loc": 142,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 125.11998893008827,
+        "normalized_complexity": null,
+        "normalized_churn": 0.04965911910689679,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/middleware/test_cors.py",
+        "is_test": true,
+        "loc": 627,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 105.13417873355861,
+        "normalized_complexity": null,
+        "normalized_churn": 0.04172691149175823,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/websocket_benchmark.py",
+        "is_test": false,
+        "loc": 120,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 102.80661346970209,
+        "normalized_complexity": null,
+        "normalized_churn": 0.040803119524900636,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "starlette/middleware/body_limit.py",
+        "is_test": false,
+        "loc": 132,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 101.67236465464029,
+        "normalized_complexity": null,
+        "normalized_churn": 0.04035294527628012,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/file_response_benchmark.py",
+        "is_test": false,
+        "loc": 113,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 96.8095610173028,
+        "normalized_complexity": null,
+        "normalized_churn": 0.038422937552614764,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/test_responses.py",
+        "is_test": true,
+        "loc": 1062,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 88.33382785929342,
+        "normalized_complexity": null,
+        "normalized_churn": 0.03505898710783778,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/middleware/test_session.py",
+        "is_test": true,
+        "loc": 362,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 88.15441019521833,
+        "normalized_complexity": null,
+        "normalized_churn": 0.03498777767738327,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "starlette/_utils.py",
+        "is_test": false,
+        "loc": 155,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 79.7681379159509,
+        "normalized_complexity": null,
+        "normalized_churn": 0.031659333537161154,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/test_datastructures.py",
+        "is_test": true,
+        "loc": 601,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 79.15577209977087,
+        "normalized_complexity": null,
+        "normalized_churn": 0.031416290460969165,
+        "risk_score": null,
+        "coverage_pct": null
+      }
+    ]
+  },
+  "impact": {
+    "scan_id": "8c2e41b7-59da-4f3e-a0d6-71b4e9c8a250",
+    "path": "starlette/exceptions.py",
+    "depth": 3,
+    "impacted": [
+      {
+        "path": "starlette/_exception_handler.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/authentication.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/concurrency.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/endpoints.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/middleware/body_limit.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/middleware/exceptions.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/middleware/wsgi.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/requests.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/routing.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/staticfiles.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/status.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "starlette/testclient.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "tests/middleware/test_body_limit.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "tests/test_applications.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "tests/test_exceptions.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "tests/test_routing.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "tests/test_staticfiles.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "tests/test_status.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "tests/test_testclient.py",
+        "distance": 1,
+        "risk_score": null
+      },
+      {
+        "path": "benchmarks/json_benchmark.py",
+        "distance": 2,
+        "risk_score": null
+      }
+    ],
+    "resolved_edges": 723,
+    "unresolved_edges": 588
+  },
+  "report": {
+    "scan_id": "8c2e41b7-59da-4f3e-a0d6-71b4e9c8a250",
+    "status": "partial",
+    "commit_sha": "f03f65c2f98c592773d691b4d309c68b83e568ef",
+    "started_at": "2026-09-11T14:35:06.948797+00:00",
+    "completed_at": "2026-09-11T14:35:57.244788+00:00",
+    "file_count": 150,
+    "commit_count": 1665,
+    "files_ranked": 0,
+    "files_unmeasured": 150,
+    "findings_total": 0,
+    "findings_by_severity": {},
+    "dependency_edges": 1311,
+    "dependency_edges_unresolved": 588,
+    "coverage_measured_files": 0,
+    "top_risks": [
+      {
+        "path": "uv.lock",
+        "is_test": false,
+        "loc": 1848,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 2519.577293764586,
+        "normalized_complexity": null,
+        "normalized_churn": 1.0,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/middleware/test_opentelemetry.py",
+        "is_test": true,
+        "loc": 548,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 481.1356445197314,
+        "normalized_complexity": null,
+        "normalized_churn": 0.19095887461378502,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "starlette/middleware/opentelemetry.py",
+        "is_test": false,
+        "loc": 123,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 364.4253243529637,
+        "normalized_complexity": null,
+        "normalized_churn": 0.1446374855237973,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/gzip_benchmark.py",
+        "is_test": false,
+        "loc": 316,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 353.93584088484573,
+        "normalized_complexity": null,
+        "normalized_churn": 0.14047429374790807,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/middleware/test_body_limit.py",
+        "is_test": true,
+        "loc": 368,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 283.45022873414865,
+        "normalized_complexity": null,
+        "normalized_churn": 0.11249912016417485,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "starlette/testclient.py",
+        "is_test": false,
+        "loc": 552,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 244.43997088783695,
+        "normalized_complexity": null,
+        "normalized_churn": 0.09701626201060531,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "benchmarks/multipart_benchmark.py",
+        "is_test": false,
+        "loc": 210,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 196.92264930813351,
+        "normalized_complexity": null,
+        "normalized_churn": 0.07815701855842044,
+        "risk_score": null,
+        "coverage_pct": null
+      },
+      {
+        "path": "tests/test_formparsers.py",
+        "is_test": true,
+        "loc": 1077,
+        "cyclomatic_complexity": null,
+        "maintainability_index": null,
+        "churn_score": 193.01659856039524,
+        "normalized_complexity": null,
+        "normalized_churn": 0.07660673837554814,
+        "risk_score": null,
+        "coverage_pct": null
+      }
+    ],
+    "commits_labelled": 1665,
+    "commits_defect_inducing": 165,
+    "top_defect_risks": [
+      {
+        "commit_sha": "36ada5bbea501c6516ca2a050151e4ba3506c702",
+        "defect_probability": 0.8571,
+        "model_version": "frequency-baseline-1"
+      },
+      {
+        "commit_sha": "b9db010d49cfa33d453facde56e53a621325c720",
+        "defect_probability": 0.8571,
+        "model_version": "frequency-baseline-1"
+      },
+      {
+        "commit_sha": "d222b87cb4601ecda5d642ab504a14974d364db4",
+        "defect_probability": 0.8571,
+        "model_version": "frequency-baseline-1"
+      },
+      {
+        "commit_sha": "7f8cd041734be3b290cdb178e99c37e1d5a19b41",
+        "defect_probability": 0.8571,
+        "model_version": "frequency-baseline-1"
+      },
+      {
+        "commit_sha": "4d5708e4688ff4d89888224668d9435b3e9e7000",
+        "defect_probability": 0.8571,
+        "model_version": "frequency-baseline-1"
+      },
+      {
+        "commit_sha": "e396f079a5b9a9610ad7d241f17f2e34fd4283ad",
+        "defect_probability": 0.8571,
+        "model_version": "frequency-baseline-1"
+      },
+      {
+        "commit_sha": "5a9fe3f048664eef8f958581c6b7be8f7abf71cc",
+        "defect_probability": 0.8571,
+        "model_version": "frequency-baseline-1"
+      },
+      {
+        "commit_sha": "ded51d714d66067ff1f57d820d56be4427dc7bd4",
+        "defect_probability": 0.4262,
+        "model_version": "frequency-baseline-1"
+      }
+    ],
+    "limitations": [
+      {
+        "subject": "Unranked files",
+        "detail": "150 of 150 files have no risk score.",
+        "consequence": "They are unknown, not safe. They sort last in the queue, so a file that could not be parsed will not appear near the top even if it is the worst in the repository."
+      },
+      {
+        "subject": "Unresolved imports",
+        "detail": "588 import edges could not be resolved to a file.",
+        "consequence": "Third-party imports, dynamic imports and relative imports above the repository root cannot be followed, so every blast radius here is a floor rather than a ceiling."
+      },
+      {
+        "subject": "Coverage",
+        "detail": "No file has coverage data.",
+        "consequence": "The sandbox has no network, so a target whose tests need third-party packages cannot run them. No file here is known to be untested; they are unmeasured, which is a different thing."
+      }
+    ],
+    "config": {
+      "max_repo_size_mb": 2048,
+      "clone_allowed_protocols": [
+        "https"
+      ],
+      "churn_half_life_days": 90.0,
+      "analysis_enabled": true,
+      "szz_max_fixes_blamed": 2000
+    },
+    "analyzer_statuses": {
+      "radon": {
+        "status": "partial",
+        "error": "Radon could not run in the sandbox: no Docker daemon is reachable."
+      }
+    }
+  }
+}
