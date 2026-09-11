@@ -20,9 +20,16 @@ pytestmark = [pytest.mark.requires_db, pytest.mark.usefixtures("git_binary")]
 
 @pytest.fixture
 def ingest_settings(tmp_path: Path) -> Settings:
+    """Settings whose clone_root is a directory nothing else writes into.
+
+    A subdirectory, not tmp_path itself: the git_repo fixture builds its source repository
+    in the same tmp_path, so pointing clone_root there would put the fixture and the
+    clones in one directory and make "clone_root is empty afterwards" assert something
+    other than what it claims.
+    """
     return Settings(
         clone_allowed_protocols=["file"],
-        clone_root=str(tmp_path),
+        clone_root=str(tmp_path / "clones"),
         max_repo_size_mb=64,
     )
 
@@ -112,6 +119,9 @@ async def test_the_clone_is_removed_whatever_happens(
 
     shutil.rmtree(ignore_errors=True) would pass this on Linux and leak whole clones on
     Windows, where git's read-only objects defeat unlink -- see remove_tree.
+
+    clone_root holds only what the pipeline puts there, so an empty directory here means
+    the clone was removed rather than merely that nothing else happened to be present.
     """
     clone_root = Path(ingest_settings.clone_root)
     repository = Repository(url=git_repo_url, name="fixture/repo")
