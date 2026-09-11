@@ -135,11 +135,12 @@ because the fix is a credential, not a retry.
 Stated plainly, because a deployment guide that lists only what works is the same failure
 this project spends its whole design avoiding.
 
-- **The worker's integrity is a security boundary.** The socket proxy filters endpoints,
-  not request bodies, so a compromised worker can still create a privileged container and
-  reach host root (ADR 0015). This is tolerable only because the worker never executes
-  target code — everything that runs goes in the sandbox. **Do not add anything to the
-  worker that executes target-controlled input.**
+- **The proxy's forwarding layer is untested.** Its validator has 34 tests covering
+  every escalation ADR 0015 named, but that it correctly relays bytes to a real daemon has
+  not been demonstrated — nothing here has run the compose stack. If containers fail to
+  start on first deploy, check `socket_proxy.refused` in the proxy's logs: a refusal names
+  the key it rejected, and a legitimate one means the allowlist in `socket_filter.py`
+  needs a deliberate edit (ADR 0017).
 - **No TLS.** Terminate it at a reverse proxy in front of the API and frontend. Nothing
   here does.
 - **`docker compose up` has never been executed by this project.** CI validates and builds

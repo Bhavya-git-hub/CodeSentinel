@@ -21,3 +21,4 @@ Format: context, decision, consequences. Numbered sequentially, never renumbered
 | [0014](0014-analysers-run-in-the-sandbox.md) | Analysers run in the sandbox without per-tool exemption; the Docker requirement arrives in phase 4 |
 | [0015](0015-socket-proxy-filters-endpoints-not-bodies.md) | The socket proxy filters endpoints, not request bodies; body-level filtering remains owed |
 | [0016](0016-authentication-fails-closed.md) | The API authenticates and refuses to start in production without keys |
+| [0017](0017-socket-proxy-validates-request-bodies.md) | The socket proxy validates request bodies by allowlist, closing ADR 0015's gap |

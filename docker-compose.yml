@@ -80,35 +80,23 @@ services:
       - clones:/var/lib/codesentinel/clones
 
   docker-proxy:
-    # Holds the Docker socket so the worker does not. This is the component with the
-    # dangerous capability, and it is small enough to reason about.
-    image: tecnativa/docker-socket-proxy:0.2.0
+    # Holds the Docker socket so the worker does not, and validates the BODY of every
+    # request rather than only its path. An off-the-shelf endpoint proxy cannot do that,
+    # which is what ADR 0015 recorded as owed and ADR 0017 closes.
+    build:
+      context: ./backend
+    command:
+      - uvicorn
+      - app.proxy:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "2375"
     environment:
-      # Deny by default. Only the container endpoints are reachable, and POST is on
-      # because creating and starting a container requires it.
-      CONTAINERS: 1
-      POST: 1
-      # Everything else stays off. IMAGES=0 blocks builds and pulls; EXEC=0 blocks
-      # execing into a running container; the rest remove whole API surfaces.
-      IMAGES: 0
-      BUILD: 0
-      EXEC: 0
-      NETWORKS: 0
-      VOLUMES: 0
-      SERVICES: 0
-      SWARM: 0
-      SYSTEM: 0
-      INFO: 0
-      AUTH: 0
-      SECRETS: 0
-      CONFIGS: 0
-      NODES: 0
-      TASKS: 0
-      PLUGINS: 0
-      DISTRIBUTION: 0
-      SESSION: 0
+      CODESENTINEL_ENVIRONMENT: local
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # The only mount of the socket anywhere in this stack.
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   frontend:

@@ -1,6 +1,6 @@
 # 0015. The socket proxy filters endpoints, not request bodies
 
-**Status:** accepted — 2026-09-11
+**Status:** accepted — 2026-09-11 (obligation closed by [0017](0017-socket-proxy-validates-request-bodies.md))
 
 Corrects a claim in [ADR 0013](0013-worker-docker-access.md).
 
