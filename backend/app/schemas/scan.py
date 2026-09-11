@@ -102,3 +102,29 @@ class FindingsPage(BaseModel):
     by_severity: dict[str, int]
     analyzer_statuses: dict[str, Any]
     findings: list[FindingItem]
+
+
+class ImpactedFile(BaseModel):
+    """A file that transitively imports the one being changed."""
+
+    path: str
+    #: Import hops away. 1 means it imports the changed file directly.
+    distance: int
+    risk_score: float | None
+
+
+class BlastRadius(BaseModel):
+    """What breaks if one file changes.
+
+    ``unresolved_edges`` is part of the answer, not a diagnostic. Edges the graph could
+    not follow -- third-party imports, dynamic imports, relative imports above the root --
+    mean the true radius is at least this large and possibly larger. A reviewer told only
+    the resolved count would read a floor as a ceiling (C4).
+    """
+
+    scan_id: uuid.UUID
+    path: str
+    depth: int
+    impacted: list[ImpactedFile]
+    resolved_edges: int
+    unresolved_edges: int

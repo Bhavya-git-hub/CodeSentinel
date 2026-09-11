@@ -13,16 +13,19 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.api.deps import SessionDep, SettingsDep
-from app.models.code import File, FileMetric, Finding
+from app.models.code import Dependency, File, FileMetric, Finding
 from app.models.enums import ScanStatus, Severity
 from app.models.history import Commit
 from app.models.repository import Repository, Scan
 from app.schemas.scan import (
+    BlastRadius,
     FileRisk,
     FindingItem,
     FindingsPage,
+    ImpactedFile,
     RiskQueue,
     ScanAccepted,
     ScanDetail,
@@ -238,4 +241,93 @@ async def get_scan_findings(
             )
             for finding, path in rows
         ],
+    )
+
+
+@router.get("/{scan_id}/impact", response_model=BlastRadius)
+async def get_blast_radius(
+    scan_id: uuid.UUID,
+    session: SessionDep,
+    path: str = Query(min_length=1, max_length=1024),
+    depth: int = Query(default=3, ge=1, le=10),
+) -> BlastRadius:
+    """Which files transitively import ``path``, and how far away each is.
+
+    Traversal runs against the direction of the import, because the question is what
+    breaks if this file changes. Depth is bounded: an unbounded answer on a large
+    repository is every file, which tells a reviewer nothing.
+    """
+    scan = await session.get(Scan, scan_id)
+    if scan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"No scan with id {scan_id}")
+
+    source = aliased(File)
+    target = aliased(File)
+    rows = (
+        await session.execute(
+            select(source.path, target.path, Dependency.resolved)
+            .select_from(Dependency)
+            .join(source, source.id == Dependency.source_file_id)
+            .outerjoin(target, target.id == Dependency.target_file_id)
+            .where(Dependency.scan_id == scan_id)
+        )
+    ).all()
+
+    importers: dict[str, list[str]] = {}
+    resolved_edges = 0
+    unresolved_edges = 0
+    for source_path, target_path, resolved in rows:
+        if resolved and target_path is not None:
+            importers.setdefault(target_path, []).append(source_path)
+            resolved_edges += 1
+        else:
+            unresolved_edges += 1
+
+    distances: dict[str, int] = {}
+    frontier = [path]
+    for hop in range(1, depth + 1):
+        nxt: list[str] = []
+        for node in frontier:
+            for importer in importers.get(node, []):
+                if importer != path and importer not in distances:
+                    distances[importer] = hop
+                    nxt.append(importer)
+        if not nxt:
+            break
+        frontier = nxt
+
+    # .tuples() so the rows are plain tuples: dict() over Row objects is untyped, and
+    # a comprehension that only unpacks them is redundant.
+    risk_rows = (
+        (
+            await session.execute(
+                select(File.path, FileMetric.risk_score)
+                .join(FileMetric, FileMetric.file_id == File.id)
+                .where(FileMetric.scan_id == scan_id)
+            )
+        )
+        .tuples()
+        .all()
+    )
+    risk_by_path: dict[str, float | None] = dict(risk_rows)
+
+    impacted = sorted(
+        (
+            ImpactedFile(
+                path=impacted_path,
+                distance=distance,
+                risk_score=risk_by_path.get(impacted_path),
+            )
+            for impacted_path, distance in distances.items()
+        ),
+        key=lambda item: (item.distance, item.path),
+    )
+
+    return BlastRadius(
+        scan_id=scan_id,
+        path=path,
+        depth=depth,
+        impacted=impacted,
+        resolved_edges=resolved_edges,
+        unresolved_edges=unresolved_edges,
     )

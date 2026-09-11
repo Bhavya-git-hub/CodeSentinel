@@ -20,12 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.models.code import FileMetric, Finding
+from app.models.code import Dependency, FileMetric, Finding
 from app.models.enums import AnalyzerStatus
 from app.models.history import Commit, FileChange
 from app.services.analyzers import coverage as coverage_analyzer
 from app.services.analyzers import findings as findings_analyzer
 from app.services.analyzers import radon
+from app.services.graph.imports import build_module_index, extract_imports
 from app.services.mining.churn import ChangeWeight, churn_score
 from app.services.sandbox.errors import SandboxError
 from app.services.sandbox.runner import Sandbox
@@ -168,6 +169,10 @@ async def run_analysis(
     )
     await session.commit()
 
+    await _persist_graph(
+        session, scan_id=scan_id, clone_path=clone_path, files_by_path=files_by_path
+    )
+
     await _persist_findings(
         session,
         scan_id=scan_id,
@@ -238,3 +243,70 @@ async def _persist_findings(
     session.add_all(rows)
     await session.commit()
     logger.info("analysis.findings_persisted", scan_id=str(scan_id), count=len(rows))
+
+
+async def _persist_graph(
+    session: AsyncSession,
+    *,
+    scan_id: uuid.UUID,
+    clone_path: Path,
+    files_by_path: dict[str, uuid.UUID],
+) -> None:
+    """Walk every Python file's imports into dependency edges.
+
+    Runs on the host: ``ast.parse`` reads bytes and never executes them, which is the
+    line ADR 0011 draws. Nothing here imports the target.
+
+    Unresolved edges are written with ``target_file_id`` NULL and a reason. Dropping them
+    would make the blast radius understate itself, and a reviewer trusting an
+    understated blast radius ships a change believing it is safe (C4).
+    """
+    python_paths = [path for path in files_by_path if path.endswith(".py")]
+    if not python_paths:
+        return
+
+    index = build_module_index(python_paths)
+    rows: list[Dependency] = []
+
+    for path in sorted(python_paths):
+        try:
+            source = (clone_path / path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            # Unreadable here means unreadable, not empty. The file keeps its inventory
+            # row and simply contributes no edges.
+            logger.info("graph.unreadable", path=path, error=str(exc))
+            continue
+
+        source_id = files_by_path.get(path)
+        if source_id is None:
+            continue
+
+        for edge in extract_imports(path, source, index):
+            rows.append(
+                Dependency(
+                    scan_id=scan_id,
+                    source_file_id=source_id,
+                    target_file_id=(
+                        files_by_path.get(edge.target_path) if edge.target_path else None
+                    ),
+                    raw_module_name=edge.raw_module_name[:1024],
+                    edge_type=edge.edge_type,
+                    resolved=edge.resolved,
+                    unresolved_reason=(
+                        edge.unresolved_reason[:255] if edge.unresolved_reason else None
+                    ),
+                )
+            )
+
+    if not rows:
+        return
+    session.add_all(rows)
+    await session.commit()
+    resolved = sum(1 for row in rows if row.resolved)
+    logger.info(
+        "analysis.graph_persisted",
+        scan_id=str(scan_id),
+        edges=len(rows),
+        resolved=resolved,
+        unresolved=len(rows) - resolved,
+    )
