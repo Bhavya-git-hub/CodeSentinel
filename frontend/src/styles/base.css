@@ -86,3 +86,20 @@ button {
   border: 0;
 }
 
+
+/*
+ * Available to assistive technology, absent from the visual design. Used for table
+ * captions: the surrounding heading tells a sighted reader what a table is, and a
+ * screen reader reaching the table directly has no such context.
+ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

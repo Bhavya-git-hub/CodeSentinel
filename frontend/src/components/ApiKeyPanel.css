@@ -1,0 +1,112 @@
+.keypanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-s);
+  padding: var(--gap-m);
+  border: var(--edge);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.keypanel h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--step-1);
+}
+
+.keypanel__state {
+  margin: 0;
+  font-size: var(--step--1);
+  display: flex;
+  align-items: center;
+  gap: var(--gap-s);
+  flex-wrap: wrap;
+}
+
+/* A key compiled into the bundle is readable by every viewer. Slate rather than red:
+   it is a real topology with a real use (single-tenant internal), so this is a
+   statement of what it is, not a warning that something is broken. */
+.keypanel__state--warn {
+  color: var(--unknown);
+  max-width: 64ch;
+}
+
+.keypanel__forget {
+  background: none;
+  border: var(--edge);
+  border-radius: var(--radius);
+  color: var(--mute);
+  font-family: var(--font-sans);
+  font-size: var(--step--1);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.keypanel__forget:hover {
+  color: var(--bone);
+  border-color: var(--unknown);
+}
+
+.keypanel__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-xs);
+}
+
+.keypanel__form label {
+  font-size: var(--step--1);
+  color: var(--mute);
+}
+
+.keypanel__row {
+  display: flex;
+  gap: var(--gap-s);
+  flex-wrap: wrap;
+}
+
+.keypanel__row input {
+  flex: 1 1 18ch;
+  /* Without this the input refuses to shrink below its intrinsic width and pushes the
+     row past the viewport at phone widths. */
+  min-width: 0;
+  background: var(--void);
+  border: var(--edge);
+  border-radius: var(--radius);
+  color: var(--bone);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  padding: 8px var(--gap-s);
+}
+
+.keypanel__row input:focus-visible {
+  outline: 2px solid var(--phosphor-dim);
+  outline-offset: 1px;
+}
+
+.keypanel__row button {
+  background: var(--panel-lift);
+  border: var(--edge);
+  border-radius: var(--radius);
+  color: var(--bone);
+  font-family: var(--font-sans);
+  font-size: var(--step--1);
+  padding: 8px var(--gap-m);
+  cursor: pointer;
+}
+
+.keypanel__row button:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.keypanel__ok {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--phosphor);
+}
+
+.keypanel__note {
+  margin: 0;
+  font-size: var(--step--1);
+  max-width: 64ch;
+}

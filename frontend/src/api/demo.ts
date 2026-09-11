@@ -119,5 +119,22 @@ export const demoSource: DataSource = {
   getFindings: () => Promise.resolve(findings),
   getImpact: (_id, path) => Promise.resolve({ ...impact, path }),
   getReport: () => Promise.resolve(report),
-  listScans: () => Promise.resolve([scan]),
+  listScans: () =>
+    Promise.resolve({
+      total: 1,
+      limit: 20,
+      offset: 0,
+      scans: [
+        {
+          scan_id: DEMO_SCAN_ID,
+          repository_url: "https://github.com/encode/starlette",
+          repository_name: "starlette",
+          status: scan.status,
+          commit_sha: scan.commit_sha,
+          error: scan.error,
+          started_at: scan.started_at,
+          completed_at: scan.completed_at,
+        },
+      ],
+    }),
 };

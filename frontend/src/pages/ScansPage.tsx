@@ -3,7 +3,9 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { source } from "../api/source";
-import type { ScanAccepted } from "../api/types";
+import type { ScanAccepted, ScanList } from "../api/types";
+import { ScanHistory } from "../components/ScanHistory";
+import { useScanResource } from "../hooks/useScanResource";
 import "./Pages.css";
 
 /**
@@ -63,6 +65,30 @@ export function SubmitForm({
   );
 }
 
+/**
+ * The history, or the reason there is not one.
+ *
+ * An unreachable API renders its error rather than an empty table. "No scans yet" and
+ * "we could not ask" are different facts about this instance, and only one of them is
+ * about the instance having done no work -- collapsing them into an empty state is the
+ * frontend's version of reporting a scan that never ran as a scan that found nothing.
+ */
+function History() {
+  const { data, error, loading } = useScanResource<ScanList>(() => source.listScans(), []);
+
+  if (loading) return <p className="muted">Loading scans&hellip;</p>;
+  if (error) {
+    return (
+      <p className="error">
+        The scan history could not be loaded: {error} This is not an empty history &mdash;
+        it is an unanswered question.
+      </p>
+    );
+  }
+  if (!data) return null;
+  return <ScanHistory page={data} />;
+}
+
 export function ScansPage() {
   return (
     <div className="page">
@@ -75,6 +101,11 @@ export function ScansPage() {
         </p>
       </header>
       <SubmitForm onSubmit={(url) => source.submitScan(url)} />
+
+      <section className="page__section">
+        <h2>Recent scans</h2>
+        <History />
+      </section>
     </div>
   );
 }

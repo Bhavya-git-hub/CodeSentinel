@@ -1,0 +1,57 @@
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-s);
+}
+
+.history__empty,
+.history__count {
+  font-size: var(--step--1);
+}
+
+/* The table is allowed to be wider than the viewport; the page is not. Without this the
+   whole document scrolls sideways on a phone and the masthead leaves the screen. */
+.history__scroll {
+  overflow-x: auto;
+  border: var(--edge);
+  border-radius: var(--radius);
+}
+
+.history__table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+}
+
+.history__table th,
+.history__table td {
+  text-align: left;
+  padding: 9px var(--gap-s);
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.history__table thead th {
+  background: var(--panel-lift);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mute);
+  letter-spacing: 0.02em;
+}
+
+.history__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* The reason a scan failed, in the list. Wrapping is deliberate: these are sentences
+   written for a person, and truncating one to fit a column hides the half that says
+   what to do about it. */
+.history__error {
+  margin: var(--gap-xs) 0 0;
+  max-width: 52ch;
+  white-space: normal;
+  font-size: var(--step--1);
+  color: var(--halt);
+}

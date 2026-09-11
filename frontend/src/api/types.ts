@@ -28,6 +28,33 @@ export interface ScanDetail {
   completed_at: string | null;
 }
 
+/**
+ * One row of the scan history.
+ *
+ * No `file_count` or `commit_count`: the API leaves them off the list because they cost
+ * two aggregate queries per repository, and the type says so rather than making them
+ * optional. An optional number in a product about absent values is a trap -- a component
+ * would render `undefined` as an em dash and nobody could tell it from a real unknown.
+ */
+export interface ScanSummary {
+  scan_id: string;
+  repository_url: string;
+  repository_name: string;
+  status: ScanStatus;
+  commit_sha: string | null;
+  error: string | null;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface ScanList {
+  /** Every scan matching the filter, not the length of this page. */
+  total: number;
+  limit: number;
+  offset: number;
+  scans: ScanSummary[];
+}
+
 export interface FileRisk {
   path: string;
   is_test: boolean;
@@ -65,7 +92,7 @@ export interface DataSource {
   getFindings(id: string): Promise<FindingsPage>;
   getImpact(id: string, path: string, depth?: number): Promise<BlastRadius>;
   getReport(id: string): Promise<ScanReport>;
-  listScans(): Promise<ScanDetail[]>;
+  listScans(limit?: number, offset?: number): Promise<ScanList>;
 }
 
 export type Severity = "critical" | "major" | "minor" | "info";

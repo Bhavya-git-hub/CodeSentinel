@@ -36,6 +36,7 @@ export function Shell({ isDemo, children }: { isDemo: boolean; children: ReactNo
             Overview
           </NavLink>
           <NavLink to="/scans">Scans</NavLink>
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
       </header>
       <main>{children}</main>

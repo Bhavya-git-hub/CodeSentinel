@@ -1,3 +1,4 @@
+import { activeKey } from "./credentials";
 import type {
   BlastRadius,
   DataSource,
@@ -5,31 +6,12 @@ import type {
   RiskQueue,
   ScanAccepted,
   ScanDetail,
+  ScanList,
   ScanReport,
 } from "./types";
 
 const BASE = import.meta.env.VITE_CODESENTINEL_API_BASE ?? "";
 
-/**
- * The API key sent with every request.
- *
- * Read at runtime from localStorage first, and only then from the build-time variable.
- * The order matters: a key baked into the bundle is visible to everyone who can load the
- * page, because a browser bundle is not a secret. That is acceptable for a single-tenant
- * internal deployment and wrong for anything else, so the preferred production topology
- * is a gateway in front of the API that adds the header server-side and leaves this
- * unset. docs/DEPLOYMENT.md says so in those words.
- */
-function apiKey(): string | undefined {
-  try {
-    const stored = window.localStorage.getItem("codesentinel.apiKey");
-    if (stored) return stored;
-  } catch {
-    // Private windows and blocked site data both throw. Fall through to the build-time
-    // value rather than failing the request here.
-  }
-  return import.meta.env.VITE_CODESENTINEL_API_KEY || undefined;
-}
 
 /**
  * A failed request, carrying the reason the API gave.
@@ -74,7 +56,7 @@ async function readDetail(response: Response): Promise<string> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    const key = apiKey();
+    const key = activeKey();
     response = await fetch(`${BASE}${path}`, {
       ...init,
       headers: {
@@ -91,11 +73,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (response.status === 401) {
-    // Distinguished from a generic failure: the fix is a credential, not a retry.
+    // Distinguished from a generic failure: the fix is a credential, not a retry. The
+    // instruction points at the panel rather than at the console, because a console
+    // incantation is a fix only the person who wrote it can perform.
     throw new ApiError(
       401,
-      "This API requires a key. Set one with " +
-        "localStorage.setItem('codesentinel.apiKey', '<your key>') and reload.",
+      "This API requires a key. Add one under Settings, then try again.",
     );
   }
   if (!response.ok) {
@@ -118,7 +101,6 @@ export const liveSource: DataSource = {
       `/api/v1/scans/${id}/impact?path=${encodeURIComponent(path)}&depth=${depth}`,
     ),
   getReport: (id) => request<ScanReport>(`/api/v1/scans/${id}/report`),
-  // The API has no list endpoint yet. Returning an empty list rather than inventing
-  // one keeps the dashboard honest about what it actually knows.
-  listScans: () => Promise.resolve([]),
+  listScans: (limit = 20, offset = 0) =>
+    request<ScanList>(`/api/v1/scans?limit=${limit}&offset=${offset}`),
 };
