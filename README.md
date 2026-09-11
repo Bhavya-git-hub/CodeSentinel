@@ -16,19 +16,35 @@ produces a prioritised, risk-ranked quality assessment. Static analysis alone te
 
 ## Status
 
-Phase 4 (Risk prioritisation) — a repository URL submitted to `POST /api/v1/scans` is
-cloned, inventoried, mined for history, measured with Radon in the sandbox, and returned
-as a risk-ranked review queue at `GET /api/v1/scans/{id}/metrics`.
+All nine phases delivered. A repository URL submitted to `POST /api/v1/scans` is cloned,
+inventoried, mined for history, and analysed inside the sandbox; the result is a
+risk-ranked review queue, normalised findings, a coverage read, an import graph, a blast
+radius, an SZZ-derived defect-probability pass, and a report that states what it could not
+determine.
 
-Delivered so far: phase 1 foundation (scaffold, configuration, data model, migrations,
-health endpoints, test harness, CI), phase 2 sandbox (an isolated, network-less,
-resource-bounded analysis container), phase 3 ingestion, phase 4 complexity × churn
-prioritisation.
+| | |
+|---|---|
+| `POST /api/v1/scans` | submit a repository |
+| `GET /api/v1/scans` | scan history, newest first |
+| `GET /api/v1/scans/{id}` | one scan's state |
+| `GET /api/v1/scans/{id}/metrics` | the risk-ranked queue |
+| `GET /api/v1/scans/{id}/findings` | Pylint and Bandit, on one severity scale |
+| `GET /api/v1/scans/{id}/impact?path=` | what breaks if this file changes |
+| `GET /api/v1/scans/{id}/report` | everything, with its own limitations |
+| `GET /health`, `/health/ready` | liveness and readiness |
+| `GET /metrics` | Prometheus, opt-in and unauthenticated |
 
-A React frontend now covers the settled contract: a landing page and a risk dashboard
-where measured, genuinely zero and unknown are three visually distinct states.
+A React frontend covers all of it, with measured, genuinely zero and unknown rendered as
+three visually distinct states throughout.
 
-Not yet: Pylint/Bandit findings, coverage, the dependency graph, defect prediction.
+Deployment is three compose files — base, production overlay, optional TLS overlay — with
+authentication, rate limiting, retention and a filtering Docker socket proxy.
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) ends with a list of what is still **not**
+production-hardened, which is the part worth reading first.
+
+**Nothing here has ever been run as a stack.** CI validates and builds every compose file
+on every push; no `docker compose up` has been executed by this project. See
+[ADR 0005](docs/adr/0005-deferred-docker-verification.md).
 
 ## Development
 

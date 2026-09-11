@@ -22,3 +22,7 @@ Format: context, decision, consequences. Numbered sequentially, never renumbered
 | [0015](0015-socket-proxy-filters-endpoints-not-bodies.md) | The socket proxy filters endpoints, not request bodies; body-level filtering remains owed |
 | [0016](0016-authentication-fails-closed.md) | The API authenticates and refuses to start in production without keys |
 | [0017](0017-socket-proxy-validates-request-bodies.md) | The socket proxy validates request bodies by allowlist, closing ADR 0015's gap |
+| [0018](0018-metrics-are-opt-in-and-unauthenticated.md) | The metrics endpoint is opt-in, unauthenticated, and omits what it cannot measure |
+| [0019](0019-retention-is-opt-in-and-deletes-repositories.md) | Retention is opt-in, prunes only terminal scans, and deletes emptied repositories |
+| [0020](0020-api-keys-carry-a-name.md) | API keys carry a name, and the name is what the logs record — *refines [0016](0016-authentication-fails-closed.md)* |
+| [0021](0021-tls-is-a-separate-overlay.md) | TLS terminates in a separate overlay, and the proxy does not hold the API key |

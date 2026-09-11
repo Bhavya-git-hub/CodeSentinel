@@ -8,3 +8,4 @@ One file per phase, recording what was accepted, what was deferred, and why.
 - [Phase 4 — Risk prioritisation](phase-4-risk-prioritisation.md)
 - [Frontend — landing and risk dashboard](frontend-dashboard.md)
 - [Phases 5-8 - findings, graph, report, prediction](phases-5-to-8.md)
+- [Phase 9 — production readiness](phase-9-production.md)
