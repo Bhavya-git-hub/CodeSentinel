@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 import type { BlastRadius } from "../api/types";
@@ -24,6 +24,13 @@ export function Impact({
   busy: boolean;
 }) {
   const [path, setPath] = useState(radius?.path ?? "");
+
+  // The field is initialised before the first result arrives, so a page opened from a
+  // shared ?path= link would render results above an empty, disabled form -- no way to
+  // see what was traced or to re-run it. Sync once the radius lands.
+  useEffect(() => {
+    if (radius?.path) setPath(radius.path);
+  }, [radius?.path]);
 
   function submit(event: FormEvent) {
     event.preventDefault();

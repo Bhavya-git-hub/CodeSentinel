@@ -30,4 +30,13 @@ describe("Impact", () => {
     render(<Impact radius={{ ...radius, impacted: [] }} onQuery={vi.fn()} busy={false} />);
     expect(screen.getByText(/as far as the graph could resolve/i)).toBeInTheDocument();
   });
+
+it("shows the traced path in the field so a shared link can be re-run", async () => {
+  // The field is initialised before the first result arrives. Without a sync, a page
+  // opened from a ?path= link renders results above an empty, disabled form.
+  const { rerender } = render(<Impact radius={null} onQuery={vi.fn()} busy={false} />);
+  rerender(<Impact radius={radius} onQuery={vi.fn()} busy={false} />);
+
+  expect(await screen.findByDisplayValue("pkg/core.py")).toBeInTheDocument();
+});
 });
