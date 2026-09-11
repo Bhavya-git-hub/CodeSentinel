@@ -202,3 +202,89 @@ jobs:
 
       - name: Build images
         run: docker compose build
+
+  smoke:
+    name: Run the stack
+    runs-on: ubuntu-latest
+    # The acceptance criterion this project has carried unmet since phase 1. Every other
+    # job proves the compose files are well-formed and the images build; none of them
+    # proves the stack RUNS. ADR 0005 deferred this because the development machine has
+    # no Docker daemon, and that is still true -- so it happens here or nowhere.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the analysis image the worker will start
+        # The sandbox has no network and cannot pull, so the image must already exist on
+        # the daemon. The worker reaches that same daemon through the socket proxy.
+        run: docker build -f sandbox/Dockerfile.analysis -t codesentinel/analysis:0.1.0 sandbox/
+
+      - name: Start the stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Show what came up
+        run: docker compose ps
+
+      - name: Apply migrations
+        # Never automatic (two API replicas racing is a corruption risk), so the stack is
+        # deliberately up and unmigrated until this runs.
+        run: docker compose run --rm api alembic upgrade head
+
+      - name: Readiness reports every dependency
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS http://localhost:8000/health/ready)"
+          echo "$body"
+          echo "$body" | python -c "import sys,json; d=json.load(sys.stdin);             assert d['status']=='ready', d;             assert d['dependencies']['database']['status']=='ok', d;             assert d['dependencies']['redis']['status']=='ok', d"
+
+      - name: The frontend serves the SPA and proxies the API on one origin
+        # Guards the nginx /api/ proxy. Without it a relative /api/v1/... request lands on
+        # the SPA fallback and returns index.html with a 200, which surfaces as a JSON
+        # parse error rather than as "the API is not reachable".
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:5173/ | grep -qi "<title>" || { echo "SPA did not serve"; exit 1; }
+          listing="$(curl -fsS http://localhost:5173/api/v1/scans)"
+          echo "$listing"
+          echo "$listing" | python -c "import sys,json; d=json.load(sys.stdin);             assert 'scans' in d and 'total' in d, d"
+
+      - name: A real scan runs end to end
+        # The deepest thing here: it exercises the worker, the socket proxy's forwarding
+        # layer (which DEPLOYMENT.md records as untested), and an analyser container
+        # actually starting. A tiny repository, because the point is the path not the
+        # payload.
+        run: |
+          set -euo pipefail
+          scan_id="$(curl -fsS -X POST http://localhost:8000/api/v1/scans             -H 'Content-Type: application/json'             -d '{"url":"https://github.com/pallets/itsdangerous"}'             | python -c "import sys,json; print(json.load(sys.stdin)['scan_id'])")"
+          echo "scan $scan_id"
+
+          for _ in $(seq 1 90); do
+            status="$(curl -fsS "http://localhost:8000/api/v1/scans/$scan_id"               | python -c "import sys,json; print(json.load(sys.stdin)['status'])")"
+            echo "  status=$status"
+            case "$status" in
+              succeeded|partial|failed) break ;;
+            esac
+            sleep 5
+          done
+
+          detail="$(curl -fsS "http://localhost:8000/api/v1/scans/$scan_id")"
+          echo "$detail"
+          # PARTIAL is a pass: the sandbox has no network, so a target whose tests need
+          # third-party packages cannot run them and coverage records SKIPPED with its
+          # reason. FAILED is not, and neither is still running after seven minutes.
+          echo "$detail" | python -c "import sys,json; d=json.load(sys.stdin);             assert d['status'] in ('succeeded','partial'), d;             assert d['file_count'] > 0, ('nothing was inventoried', d);             assert d['commit_count'] > 0, ('no history was mined', d)"
+
+      - name: The report states what it could not determine
+        run: |
+          set -euo pipefail
+          id="$(curl -fsS 'http://localhost:8000/api/v1/scans?limit=1'             | python -c "import sys,json; print(json.load(sys.stdin)['scans'][0]['scan_id'])")"
+          curl -fsS "http://localhost:8000/api/v1/scans/$id/report"             | python -c "import sys,json; d=json.load(sys.stdin);               print(json.dumps({k: d[k] for k in ('status','files_ranked','files_unmeasured','findings_total','dependency_edges','commit_count')}, indent=1));               assert isinstance(d['limitations'], list), d;               assert d['config'], 'the reproducibility snapshot is empty (C5)'"
+
+      - name: Logs
+        if: always()
+        # On failure this is the only account of what happened, and the reason a scan
+        # failed lives in the worker's log rather than in any assertion above.
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v --remove-orphans
